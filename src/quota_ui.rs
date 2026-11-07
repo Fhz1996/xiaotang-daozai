@@ -119,13 +119,25 @@ fn logo(c:&Card,provider:Provider,x:f32,y:f32,size:f32){
     let rect=egui::Rect::from_min_size(min,egui::Vec2::splat(pixels as f32/ppp));
     if let Some(texture)=logo_texture(ctx,provider,pixels){c.painter.image(texture.id(),rect,egui::Rect::from_min_max(egui::pos2(0.0,0.0),egui::pos2(1.0,1.0)),Color32::WHITE);}
 }
-fn deepseek_badge_svg(skin:crate::model::Skin)->String{
-    use crate::model::Skin;
-    let (fill,rim)=match skin{Skin::Classic=>("#e9edff","#cfd7ff"),Skin::Cream=>("#e9edff","#dce2fc"),Skin::Radish=>("#fff4e8","#f2d9bd"),Skin::GlassLight=>("#f5f7ff","#dfe5fa"),Skin::GlassDark|Skin::Fluid=>("#dce4fa","#b8c9ec")};
+fn deepseek_badge_svg(skin:&crate::model::Skin)->String{
+    let (fill,rim)=match skin.key(){
+        "classic"=>("#e9edff","#cfd7ff"),
+        "cream"=>("#e9edff","#dce2fc"),
+        "radish"=>("#fff4e8","#f2d9bd"),
+        "glass_light"=>("#f5f7ff","#dfe5fa"),
+        "glass"|"fluid"=>("#dce4fa","#b8c9ec"),
+        _=>{
+            let light=match crate::skin::def(skin).paper_color(false){
+                Some(c)=>{let lum=0.299*c.r() as f32+0.587*c.g() as f32+0.114*c.b() as f32;lum>128.0}
+                None=>true,
+            };
+            if light {("#f5f7ff","#dfe5fa")} else {("#dce4fa","#b8c9ec")}
+        }
+    };
     let whale=include_str!("../assets/ai-icons/deepseek.svg").replace("currentColor","#4d6bfe").replace("width=\"1em\"","x=\"12.5\" width=\"75\"").replace("height=\"1em\"","y=\"12.5\" height=\"75\"");
     format!("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><circle cx=\"50\" cy=\"50\" r=\"48\" fill=\"{fill}\" stroke=\"{rim}\" stroke-width=\"3\"/>{whale}</svg>")
 }
-fn deepseek_badge(c:&Card,skin:crate::model::Skin,x:f32,y:f32,size:f32){
+fn deepseek_badge(c:&Card,skin:&crate::model::Skin,x:f32,y:f32,size:f32){
     let ctx=c.ui.ctx();let ppp=ctx.pixels_per_point();let pixels=(size*c.s*ppp).round().max(1.0) as u32;
     let key=egui::Id::new(("deepseek-badge",skin.key(),pixels));
     let texture=ctx.data_mut(|data|data.get_temp::<egui::TextureHandle>(key)).or_else(||{
@@ -227,7 +239,7 @@ impl App {
             let snapshot=self.quota.rows.get(&a.id).and_then(|r|r.as_ref().ok());
             if a.provider.balance(){
                 let wide=true;let extra=if wide{layout.widths[crate::bar_layout::quota_slot(position)]-27.0}else{0.0};let icon_x=x-extra/2.0;
-                if a.provider==Provider::WorkBuddy{logo(c,a.provider,icon_x,15.0,22.0);}else{deepseek_badge(c,self.settings.skin,icon_x,15.0,24.0);}
+                if a.provider==Provider::WorkBuddy{logo(c,a.provider,icon_x,15.0,22.0);}else{deepseek_badge(c,&self.settings.skin,icon_x,15.0,24.0);}
                 let loading=self.quota.balance_loading(&a.id);let stale=self.quota.stale.contains_key(&a.id);
                 if stale||(!loading&&snapshot.is_none()){
                     c.circle(icon_x+9.0,24.0,3.8,Color32::BLACK);
@@ -279,7 +291,7 @@ impl App {
             return;
         }
         if a.provider==Provider::DeepSeek{
-            deepseek_badge(c,self.settings.skin,85.0,88.0,50.0);
+            deepseek_badge(c,&self.settings.skin,85.0,88.0,50.0);
             if let Some(s)=snapshot{
                 if let Some(wallet)=&s.wallet{
                     let b=wallet.primary();let stale=self.quota.stale.contains_key(&a.id);
@@ -353,7 +365,7 @@ impl App {
                     ui.horizontal(|ui|{
                         ui.add(egui::Label::new("::").sense(egui::Sense::drag())).on_hover_text("拖动调整账号顺序").dnd_set_drag_payload(a.id.clone());
                         let (rect,_)=ui.allocate_exact_size(egui::vec2(26.0,28.0),egui::Sense::hover());let c=Card::new(ui,rect.min,ui.clip_rect());
-                        if a.provider==Provider::DeepSeek{deepseek_badge(&c,if ui.visuals().dark_mode{crate::model::Skin::Classic}else{crate::model::Skin::GlassLight},13.0,14.0,26.0);}else if a.provider==Provider::ZCode{logo(&c,a.provider,13.0,14.0,26.0);}else{c.circle(13.0,14.0,13.0,crate::paint::mix(accent_colors(&self.quota.config,&a)[0],Color32::BLACK,0.75));logo(&c,a.provider,13.0,14.0,20.0);}
+                        if a.provider==Provider::DeepSeek{deepseek_badge(&c,if ui.visuals().dark_mode{&crate::model::Skin::Classic}else{&crate::model::Skin::GlassLight},13.0,14.0,26.0);}else if a.provider==Provider::ZCode{logo(&c,a.provider,13.0,14.0,26.0);}else{c.circle(13.0,14.0,13.0,crate::paint::mix(accent_colors(&self.quota.config,&a)[0],Color32::BLACK,0.75));logo(&c,a.provider,13.0,14.0,20.0);}
                         ui.label(egui::RichText::new(a.provider.name()).strong());
                         // 从右往左排：按钮先靠右放好，名称输入框占用剩余宽度，按钮再宽也不会顶出卡片。
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{
@@ -624,7 +636,7 @@ impl App {
         let summary;
         if a.provider.balance(){
             let icon_y=mid-7.0;
-            if a.provider==Provider::WorkBuddy{logo(c,a.provider,cx,icon_y,20.0);}else{deepseek_badge(c,self.settings.skin,cx,icon_y,22.0);}
+            if a.provider==Provider::WorkBuddy{logo(c,a.provider,cx,icon_y,20.0);}else{deepseek_badge(c,&self.settings.skin,cx,icon_y,22.0);}
             let loading=self.quota.balance_loading(&a.id);let stale=self.quota.stale.contains_key(&a.id);
             if stale||(!loading&&snapshot.is_none()){
                 c.circle(cx+8.0,icon_y+8.0,3.6,Color32::BLACK);

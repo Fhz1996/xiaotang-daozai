@@ -18,6 +18,7 @@ mod local_calendar;
 mod calendar_editor;
 pub mod glass;
 pub mod skin_paint;
+pub mod skin;
 pub mod icons;
 pub mod input;
 pub mod lyrics;

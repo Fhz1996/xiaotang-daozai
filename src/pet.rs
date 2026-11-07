@@ -243,13 +243,15 @@ impl Pet {
         self.y = approach(self.y, y, 14.0, dt);
     }
 
-    pub fn draw(&self, c: &Card, cx: f32, t: f64, skin: Skin) {
-        let ink = if skin == Skin::Radish { crate::skin_paint::RADISH_INK } else { theme::WHITE };
-        if skin == Skin::Radish {
-            self.draw_radish_eyes(c, cx, ink);
+    pub fn draw(&self, c: &Card, cx: f32, t: f64, skin: &Skin) {
+        let def = crate::skin::def(skin);
+        let ink = def.ink_color();
+        if def.eye_style == crate::skin::EyeStyle::Radish {
+            self.draw_cute_eyes(c, cx, ink, def.pupil_color(), def.eye_ratio);
         } else {
             self.draw_line_eyes(c, cx, ink);
         }
+        let cute_mouth = def.mouth == crate::skin::MouthStyle::Cute;
         match self.state {
             PetState::Dozing | PetState::Sleeping => {
                 let bob = ((t as f32 * 1.4).sin() + 1.0) * 0.7;
@@ -257,9 +259,9 @@ impl Pet {
                 if self.state == PetState::Sleeping { c.text(cx+19.0, 9.0-bob, "z", 5.5, W::Bold, Color32::from_rgb(170,160,255), H::Left); }
             },
             PetState::Happy => {
-                if skin == Skin::Radish {
-                    // 萝卜 IP 开心：睁圆眼（上面已按 wide 画）+ 张嘴露舌。
-                    self.draw_radish_open_mouth(c, cx, ink);
+                if cute_mouth {
+                    // 萝卜式开心：睁圆眼（上面已按 wide 画）+ 张嘴露舌。
+                    self.draw_open_mouth(c, cx, ink, def.tongue_color());
                 } else {
                     let k = smoothstep(0.0, 0.2, self.age) * (1.0-smoothstep(1.5, 2.5, self.age));
                     let c = c.faded(k);
@@ -271,9 +273,9 @@ impl Pet {
             },
             PetState::Satisfied => crate::paint::droplet(c,cx+18.0,12.0,5.0,theme::CYAN),
             PetState::Music => {
-                if skin == Skin::Radish {
-                    // 萝卜 IP 唱歌：睁圆眼 + 圆形 O 嘴（与开心的大笑横嘴区分）+ 手持麦克风。
-                    self.draw_radish_sing_mouth(c, cx, ink);
+                if cute_mouth {
+                    // 萝卜式唱歌：睁圆眼 + 圆形 O 嘴（与开心的大笑横嘴区分）+ 手持麦克风。
+                    self.draw_sing_mouth(c, cx, ink);
                     microphone(c, cx, self.y + self.gaze[1], self.age);
                 } else {
                     let alpha=smoothstep(0.0,1.0,self.age%MUSIC_PERIOD);
@@ -288,9 +290,9 @@ impl Pet {
                 c.circle(cx+17.8,14.5,0.9,theme::YELLOW);
             },
             _ => {
-                // 萝卜皮肤在默认清醒状态画黑色波浪嘴；其余皮肤沿用原版（无嘴）。
-                if skin == Skin::Radish {
-                    self.draw_radish_mouth(c, cx, ink);
+                // 萝卜式默认清醒状态画波浪嘴；其余皮肤沿用原版（无嘴）。
+                if cute_mouth {
+                    self.draw_wave_mouth(c, cx, ink);
                 }
             },
         }
@@ -317,9 +319,8 @@ impl Pet {
         for p in [points[0], points[12]] { c.circle(p.0, p.1, stroke/2.0, color); }
     }
 
-    /// 萝卜 IP 眼睛：睁眼是白色眼白 + 深蓝瞳孔，且瞳孔「对眼」——左眼贴右、右眼贴左；眯眼/闭眼退化成深色弧线。
-    fn draw_radish_eyes(&self, c: &Card, cx: f32, ink: Color32) {
-        let pupil = crate::skin_paint::RADISH_EYE;
+    /// 大眼睛（萝卜式）：睁眼是白色眼白 + 彩色瞳孔，且瞳孔「对眼」——左眼贴右、右眼贴左；眯眼/闭眼退化成深色弧线。
+    fn draw_cute_eyes(&self, c: &Card, cx: f32, ink: Color32, pupil: Color32, eye_ratio: f32) {
         // 开心：睁圆大眼、瞳孔居中；唱歌：微微睁眼（横向压扁、眼白更小）、瞳孔居中；清醒/担忧等保持对眼。
         // 所有表情眼白都用同一个不规则蛋形（eye_white），唱歌只是把半高缩小并横向压扁（宽 > 高）。
         let wide = matches!(self.state, PetState::Happy);
@@ -335,11 +336,8 @@ impl Pet {
                 } else {
                     eye.height * 0.72
                 };
-                let ww = if sing {
-                    wh * 1.15            // 唱歌：横向压扁（宽 > 高）
-                } else {
-                    wh * 0.73            // 开心/清醒：竖椭圆
-                };
+                // 唱歌横向压扁（微微睁眼）；其余按眼白宽高比（萝卜竖椭圆 0.73）。
+                let ww = if sing { wh * 1.15 } else { wh * eye_ratio };
                 eye_white(c, x, y, ww, wh, Color32::WHITE);
                 // 清醒/担忧等对眼且下移；开心/唱歌瞳孔居中。
                 let dx = if wide || sing { 0.0 } else if i == 0 { 0.30 * ww } else { -0.30 * ww };
@@ -352,10 +350,10 @@ impl Pet {
         }
     }
 
-    /// 萝卜 IP 嘴：从参考图逐像素提取的「实心粗条」形状（上下两条边界围成的波浪，两端球状膨大），
+    /// 波浪嘴：从参考图逐像素提取的「实心粗条」形状（上下两条边界围成的波浪，两端球状膨大），
     /// 等比例缩放（x/y 同 scale），忠实还原参考图。上边界左→右 + 下边界右→左拼成闭合多边形填充，
     /// 两端各补一个圆球头。
-    fn draw_radish_mouth(&self, c: &Card, cx: f32, ink: Color32) {
+    fn draw_wave_mouth(&self, c: &Card, cx: f32, ink: Color32) {
         let y = 23.5 + self.y;
         let sx = 1.12; // 整体拉宽一点点
         let top: [(f32, f32); 21] = [
@@ -379,18 +377,17 @@ impl Pet {
         c.circle(cx + 4.5 * sx, y - 0.29, 1.05, ink);
     }
 
-    /// 萝卜 IP 开心嘴：横向大笑（宽扁黑开口）+ 下方粉色舌头。
-    fn draw_radish_open_mouth(&self, c: &Card, cx: f32, ink: Color32) {
+    /// 开心张嘴：黑色开口 + 下方舌头。
+    fn draw_open_mouth(&self, c: &Card, cx: f32, ink: Color32, tongue: Color32) {
         let y = 23.5 + self.y;
-        let tongue = crate::skin_paint::RADISH_TONGUE;
         // 黑色口腔：接近圆形的开口（参考图宽高≈1:1）。
         ellipse(c, cx, y, 3.3, 2.7, ink);
-        // 粉色舌头：更大更圆、靠下，几乎填满口腔，黑边只剩一圈窄环。
+        // 舌头：更大更圆、靠下，几乎填满口腔，黑边只剩一圈窄环。
         ellipse(c, cx, y + 0.6, 2.5, 1.8, tongue);
     }
 
-    /// 萝卜 IP 唱歌嘴：圆形 O 嘴（发「啊/哦」音），与开心的大笑横嘴区分。
-    fn draw_radish_sing_mouth(&self, c: &Card, cx: f32, ink: Color32) {
+    /// 唱歌嘴：圆形 O 嘴（发「啊/哦」音），与开心的大笑嘴区分。
+    fn draw_sing_mouth(&self, c: &Card, cx: f32, ink: Color32) {
         let y = 23.5 + self.y;
         ellipse(c, cx, y, 2.3, 2.3, ink);
     }

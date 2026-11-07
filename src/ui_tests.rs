@@ -4432,9 +4432,9 @@ fn skin_gallery(){
             raster.buf[y*w+x]=c;
         }}
     };
-    for (skin,shape) in crate::model::Skin::ALL.into_iter().flat_map(|s|crate::model::IslandShape::ALL.map(|p|(s,p))) {
+    for (skin,shape) in crate::model::Skin::ALL.into_iter().flat_map(|s|crate::model::IslandShape::ALL.map(|p|(s.clone(),p))) {
         for open in [false,true] {
-            let mut h=H::new();h.app.settings.skin=skin;h.app.settings.island_shape=shape;h.app.settings.pet=true;h.app.opts.pet_idle=0.0;
+            let mut h=H::new();h.app.settings.skin=skin.clone();h.app.settings.island_shape=shape;h.app.settings.pet=true;h.app.opts.pet_idle=0.0;
             h.media=crate::smtc::NowPlaying{title:"Paper Boats".into(),artist:"The Lanterns".into(),position:64.0,duration:201.0,playing:true,..Default::default()};
             let mut raster=crate::preview_raster::Raster::new(w,hgt);
             for frame in 0..120 {
@@ -4494,7 +4494,7 @@ fn skin_gallery_resident(){
     std::fs::create_dir_all(&dest).unwrap();
     for skin in crate::model::Skin::ALL {
         for shape in crate::model::IslandShape::ALL {
-            let mut h=H::new();h.app.settings.skin=skin;h.app.settings.island_shape=shape;h.app.opts.pet_idle=0.0;
+            let mut h=H::new();h.app.settings.skin=skin.clone();h.app.settings.island_shape=shape;h.app.opts.pet_idle=0.0;
             h.quota_accounts(2);h.app.quota.config.colors.insert("preview-0".into(),crate::quota::Accent::Blue);
             // 岛体收起态
             let (w,hgt)=((crate::app::CANVAS_W*2.0) as usize,(WIN_H*2.0) as usize);
@@ -4543,7 +4543,7 @@ fn skin_gallery_pages(){
     let skins=std::env::var("DAOZAI_SKINS").unwrap_or_else(|_|"glass_light,cream,classic".into());
     for skin in skins.split(',').map(crate::model::Skin::parse) {
         for page in 0..9usize {
-            let mut h=H::new();h.app.settings.skin=skin;h.app.settings.island_shape=crate::model::IslandShape::Pill;
+            let mut h=H::new();h.app.settings.skin=skin.clone();h.app.settings.island_shape=crate::model::IslandShape::Pill;
             h.quota_accounts(2);
             h.app.todos.items.push(crate::model::TodoItem{text:"整理岛仔皮肤反馈".into(),done_on:None,due:Some("2026-11-05 10:00".into()),reminded:false,..Default::default()});
             h.app.todos.items.push(crate::model::TodoItem{text:"已完成的事项".into(),done_on:Some("2026-11-04".into()),due:None,reminded:false,..Default::default()});
@@ -4579,7 +4579,7 @@ fn deepseek_balance_gallery(){
     let dest=std::path::PathBuf::from(std::env::var_os("DAOZAI_DEEPSEEK_PREVIEW_DIR").expect("需指定预览目录"));std::fs::create_dir_all(&dest).unwrap();
     for skin in [crate::model::Skin::Classic,crate::model::Skin::Cream,crate::model::Skin::GlassLight,crate::model::Skin::GlassDark]{
     for (name,amount,stale,count) in [("normal","4.18",false,2),("large","12800.00",false,2),("overflow","128000.00",false,5),("stale","12800.00",true,2),("loading","4.18",false,2),("error","4.18",false,2)] {for open in [false,true]{
-        let mut h=H::new();h.app.settings.pet=false;h.app.settings.skin=skin;h.app.settings.show_battery=true;h.quota_accounts(count);
+        let mut h=H::new();h.app.settings.pet=false;h.app.settings.skin=skin.clone();h.app.settings.show_battery=true;h.quota_accounts(count);
         h.app.quota.config.accounts[1].provider=Provider::Claude;h.app.quota.config.accounts[1].alias="Claude".into();h.app.quota.config.accounts[0].alias="Codex".into();
         let id=h.app.quota.config.connect_deepseek("preview".into(),"DeepSeek".into());
         let snapshot=crate::quota::parse(Provider::DeepSeek,&serde_json::json!({"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":amount,"topped_up_balance":amount,"granted_balance":"0.00"}]})).unwrap();
@@ -4815,7 +4815,7 @@ fn side_dock_gallery(){
     for (dock,shape,skin) in [(crate::model::Dock::Left,crate::model::IslandShape::Notch,crate::model::Skin::Classic),(crate::model::Dock::Right,crate::model::IslandShape::Pill,crate::model::Skin::Cream)] {
         let tag=format!("{}-{}",dock.key(),shape.key());
         let mut h=H::new();let mut r=feature_raster_sized(w,hgt);
-        h.app.settings.dock=dock;h.app.settings.island_shape=shape;h.app.settings.skin=skin;h.app.settings.pet=false;
+        h.app.settings.dock=dock;h.app.settings.island_shape=shape;h.app.settings.skin=skin.clone();h.app.settings.pet=false;
         h.app.media.title="晴天".into();h.app.media.artist="周杰伦".into();h.app.media.playing=true;h.app.media.source="cloudmusic.exe".into();
         let away=Some(Pos2::new(w/2.0,hgt-10.0));
         shoot_side(&mut h,&mut r,&dest,&format!("side-{tag}-collapsed"),60,away);
@@ -5019,7 +5019,7 @@ fn workbuddy_balance_gallery(){
     let dest=std::path::PathBuf::from(std::env::var_os("DAOZAI_DEEPSEEK_PREVIEW_DIR").expect("需指定预览目录"));std::fs::create_dir_all(&dest).unwrap();
     for skin in [crate::model::Skin::Classic,crate::model::Skin::Cream,crate::model::Skin::GlassLight,crate::model::Skin::GlassDark]{
     for (name,amount,stale,count) in [("workbuddy","4.18",false,3)] {for open in [false,true]{
-        let mut h=H::new();h.app.settings.pet=false;h.app.settings.skin=skin;h.app.settings.show_battery=true;h.quota_accounts(count);
+        let mut h=H::new();h.app.settings.pet=false;h.app.settings.skin=skin.clone();h.app.settings.show_battery=true;h.quota_accounts(count);
         h.app.quota.config.accounts[1].provider=Provider::Claude;h.app.quota.config.accounts[1].alias="Claude".into();h.app.quota.config.accounts[0].alias="Codex".into();
         let id=h.app.quota.config.connect_deepseek("preview".into(),"DeepSeek".into());
         let snapshot=crate::quota::parse(Provider::DeepSeek,&serde_json::json!({"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":amount,"topped_up_balance":amount,"granted_balance":"0.00"}]})).unwrap();

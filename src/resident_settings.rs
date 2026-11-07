@@ -73,8 +73,8 @@ impl crate::app::App {
                 CLOCK=>{let text=self.settings.clock_text(&chrono::Local::now().format("%H:%M:%S").to_string());paint::clock(&c,x-paint::clock_width(&c,&text,theme::size::PILL_CLOCK)/2.0,21.0,&text,theme::size::PILL_CLOCK);},
                 PET=>{
                     let from=crate::skin_paint::shape_count(ui.ctx(),ui.layer_id());
-                    self.pet.draw(&c,x,self.t,self.settings.skin);
-                    if self.settings.skin==crate::model::Skin::Radish {
+                    self.pet.draw(&c,x,self.t,&self.settings.skin);
+                    if crate::skin::def(&self.settings.skin).eye_style==crate::skin::EyeStyle::Radish {
                         keep_colors.push((from,crate::skin_paint::shape_count(ui.ctx(),ui.layer_id())));
                     }
                 },

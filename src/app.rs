@@ -1607,8 +1607,9 @@ impl App {
         let glass_skin = self.settings.skin.is_glass();
         let layer = painter.layer_id();
         // 萝卜皮肤：缩略态橙色，点击展开后切换成白底界面；其余皮肤不受影响。
-        let palette = if self.settings.skin==model::Skin::Radish && self.open {
-            Some(crate::skin_paint::RADISH_LIGHT)
+        let palette = if self.open {
+            let def = crate::skin::def(&self.settings.skin);
+            def.palette_open.or(self.skin_palette())
         } else {
             self.skin_palette()
         };
@@ -1722,8 +1723,8 @@ impl App {
             // 吉祥物跟随皮肤换色：浅色底上变成深色版本，保持清晰；萝卜皮肤用眼白+蓝瞳并跳过换色。
             let fit=if self.island_lyrics_active()||self.notice.is_some(){1.0}else{((WIN_W-32.0)/self.resident.target.width).min(1.0)};
             let pet_from=crate::skin_paint::shape_count(&ctx,layer);
-            self.pet.draw(&base.scaled(cx-origin.x,15.0,fit).shifted(0.0,y).faded(pet_alpha),cx-origin.x+self.resident.position(bar::PET),self.t,self.settings.skin);
-            if self.settings.skin==model::Skin::Radish {
+            self.pet.draw(&base.scaled(cx-origin.x,15.0,fit).shifted(0.0,y).faded(pet_alpha),cx-origin.x+self.resident.position(bar::PET),self.t,&self.settings.skin);
+            if crate::skin::def(&self.settings.skin).eye_style==crate::skin::EyeStyle::Radish {
                 keep_colors.push((pet_from,crate::skin_paint::shape_count(&ctx,layer)));
             }
         }
@@ -2025,7 +2026,7 @@ impl App {
 
     /// 当前皮肤的换色调色板（经典为 None）。
     pub(crate) fn skin_palette(&self)->Option<crate::skin_paint::Palette> {
-        match self.settings.skin {model::Skin::Cream=>Some(crate::skin_paint::CREAM),model::Skin::Radish=>Some(crate::skin_paint::RADISH),model::Skin::GlassLight=>Some(crate::skin_paint::GLASS_LIGHT),model::Skin::GlassDark=>Some(crate::skin_paint::GLASS_DARK),model::Skin::Classic|model::Skin::Fluid=>None}
+        crate::skin::def(&self.settings.skin).palette
     }
 
     /// 设置页预览用的岛体底色：没有真实模糊，毛玻璃按较实的玻璃表现。
@@ -2033,8 +2034,10 @@ impl App {
         match self.settings.skin {
             model::Skin::GlassDark=>{let (r,g,b)=glass::GROUND_DARK;Color32::from_rgba_unmultiplied(r,g,b,215)}
             model::Skin::GlassLight=>{let [r,g,b]=glass::LIGHT_GROUND.map(|v|(v*255.0).round() as u8);Color32::from_rgba_unmultiplied(r,g,b,225)}
-            model::Skin::Radish=>{let [r,g,b]=crate::skin_paint::RADISH.paper;Color32::from_rgb(r,g,b)}
-            _=>self.glass_fill(),
+            _=>match crate::skin::def(&self.settings.skin).paper_color(false){
+                Some(c)=>c,
+                None=>self.glass_fill(),
+            },
         }
     }
 
@@ -2044,10 +2047,11 @@ impl App {
         match self.settings.skin {
             model::Skin::GlassDark=>{let (r,g,b)=glass::GROUND_DARK;Color32::from_rgba_unmultiplied(r,g,b,alpha)}
             model::Skin::GlassLight=>{let [r,g,b]=glass::LIGHT_GROUND.map(|v|(v*255.0).round() as u8);Color32::from_rgba_unmultiplied(r,g,b,alpha)}
-            model::Skin::Cream=>{let [r,g,b]=crate::skin_paint::CREAM.paper;Color32::from_rgb(r,g,b)}
-            model::Skin::Radish=>{let [r,g,b]=if self.open {[255,255,255]} else {crate::skin_paint::RADISH.paper};Color32::from_rgb(r,g,b)}
-            model::Skin::Classic=>Color32::BLACK,
             model::Skin::Fluid=>self.fluid.compose(0.5,0.5,1.0,1.0,0.0),
+            _=>match crate::skin::def(&self.settings.skin).paper_color(self.open){
+                Some(c)=>c,
+                None=>Color32::BLACK,
+            },
         }
     }
 
@@ -2059,7 +2063,7 @@ impl App {
 
     /// 绘制岛体（或通知胶囊）的本体：经典皮肤为纯黑；毛玻璃为着色底 + 顶部柔光 + 边缘高光。
     fn paint_body(&self,painter:&egui::Painter,rect:Rect,flare:f32,flare_h:f32,radius:f32,feather:f32){
-        let skin=self.settings.skin;
+        let skin=self.settings.skin.clone();
         if skin==model::Skin::Fluid {
             let pill=self.settings.island_shape==model::IslandShape::Pill;
             let (map,frame)=shape::EdgeMap::of(rect,if pill {model::Dock::Top}else{self.dock()});

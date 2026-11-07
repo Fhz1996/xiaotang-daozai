@@ -1207,10 +1207,19 @@ impl App {
                         });
                         settings_label(ui,"岛体外观");
                         settings_card(ui,|ui|{
-                            use crate::model::{self as model,Skin};
-                            let skins:Vec<(Skin,&str)>=Skin::ALL.iter().map(|s|(*s,s.label())).collect();
-                            settings_control_row_right(ui,"皮肤",|ui|{settings_segmented(ui,&mut self.settings.skin,&skins,64.0);});
-                            settings_hint(ui,self.settings.skin.description());
+                            use crate::model::{self as model};
+                            settings_control_row(ui,"皮肤",56.0,|ui|{
+                                let current_key=crate::skin::def(&self.settings.skin).key.clone();
+                                let current_label=crate::skin::def(&self.settings.skin).label.clone();
+                                egui::ComboBox::from_id_salt("skin-picker").selected_text(current_label).width(ui.available_width().min(220.0)).truncate().show_ui(ui,|ui|{
+                                    for d in crate::skin::all() {
+                                        if ui.selectable_label(d.key==&current_key,d.label.clone()).clicked() {
+                                            self.settings.skin=crate::skin::resolve_key(&d.key);
+                                        }
+                                    }
+                                }).response
+                            });
+                            settings_hint(ui,&crate::skin::def(&self.settings.skin).description);
                             ui.separator();
                             let shapes:Vec<(model::IslandShape,&str)>=model::IslandShape::ALL.iter().map(|s|(*s,s.label())).collect();
                             settings_control_row_right(ui,"形状",|ui|{settings_segmented(ui,&mut self.settings.island_shape,&shapes,64.0);});

@@ -86,7 +86,7 @@ fn replace_file(tmp:&Path,path:&Path)->std::io::Result<()> {
 /// 岛体配色皮肤（与形状独立，可任意组合）。
 /// - 经典：纯黑；奶油：暖白底深棕字、橙色强调（参考 Oyen）；
 /// - 毛玻璃·浅 / 毛玻璃·深：系统实时模糊 + 浅色或深色玻璃。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Skin {
     #[default]
     Classic,
@@ -95,30 +95,43 @@ pub enum Skin {
     GlassLight,
     GlassDark,
     Fluid,
+    /// 自定义皮肤（从 `%APPDATA%\Daozai\skins` 目录加载），key 存字符串。
+    Custom(String),
 }
 
 impl Skin {
     pub const ALL: [Skin; 6] = [Skin::Classic, Skin::Cream, Skin::Radish, Skin::GlassLight, Skin::GlassDark, Skin::Fluid];
-    pub fn key(self) -> &'static str {
-        match self { Self::Classic => "classic", Self::Fluid => "fluid", Self::Cream => "cream", Self::Radish => "radish", Self::GlassLight => "glass_light", Self::GlassDark => "glass" }
+    pub fn key(&self) -> &str {
+        match self { Self::Classic => "classic", Self::Fluid => "fluid", Self::Cream => "cream", Self::Radish => "radish", Self::GlassLight => "glass_light", Self::GlassDark => "glass", Self::Custom(s) => s.as_str() }
     }
     pub fn parse(value: &str) -> Self {
         match value { "fluid" => Self::Fluid, "cream" => Self::Cream, "radish" => Self::Radish, "glass_light" => Self::GlassLight, "glass" | "glass_dark" => Self::GlassDark, _ => Self::Classic }
     }
-    pub fn label(self) -> &'static str {
-        match self { Self::Classic => "经典", Self::Fluid => "悬浮云", Self::Cream => "奶油", Self::Radish => "萝卜", Self::GlassLight => "毛玻璃·浅", Self::GlassDark => "毛玻璃·深" }
-    }
-    pub fn description(self) -> &'static str {
+    pub fn label(&self) -> String {
         match self {
-            Self::Classic => "纯黑岛体，与屏幕刘海融为一体，资源占用最低。",
-            Self::Fluid => "半透明灰底随音乐封面换色，光晕跟随鼠标，播放进度带有渐隐光尾。皮肤作者：啵（@hanhb123）。",
-            Self::Cream => "暖白底色配深棕文字和橙色强调，柔和明亮。",
-            Self::Radish => "橙色萝卜岛体，配绿叶强调与蓝色眼睛，圆润可爱，对应萝卜 IP 配色。",
-            Self::GlassLight => "浅色磨砂玻璃，透出身后桌面的颜色，文字为深色；按背景明暗自动调整，保证清晰。",
-            Self::GlassDark => "深色磨砂玻璃，透出身后桌面的颜色，文字为白色；按背景明暗自动调整，保证清晰。",
+            Self::Classic => "经典".into(), Self::Fluid => "悬浮云".into(), Self::Cream => "奶油".into(), Self::Radish => "萝卜".into(),
+            Self::GlassLight => "毛玻璃·浅".into(), Self::GlassDark => "毛玻璃·深".into(),
+            Self::Custom(_) => crate::skin::def(self).label.clone(),
         }
     }
-    pub fn is_glass(self) -> bool { matches!(self, Self::GlassLight | Self::GlassDark) }
+    pub fn description(&self) -> String {
+        match self {
+            Self::Classic => "纯黑岛体，与屏幕刘海融为一体，资源占用最低。".into(),
+            Self::Fluid => "半透明灰底随音乐封面换色，光晕跟随鼠标，播放进度带有渐隐光尾。皮肤作者：啵（@hanhb123）。".into(),
+            Self::Cream => "暖白底色配深棕文字和橙色强调，柔和明亮。".into(),
+            Self::Radish => "橙色萝卜岛体，配绿叶强调与蓝色眼睛，圆润可爱，对应萝卜 IP 配色。".into(),
+            Self::GlassLight => "浅色磨砂玻璃，透出身后桌面的颜色，文字为深色；按背景明暗自动调整，保证清晰。".into(),
+            Self::GlassDark => "深色磨砂玻璃，透出身后桌面的颜色，文字为白色；按背景明暗自动调整，保证清晰。".into(),
+            Self::Custom(_) => crate::skin::def(self).description.clone(),
+        }
+    }
+    pub fn is_glass(&self) -> bool {
+        match self {
+            Self::GlassLight | Self::GlassDark => true,
+            Self::Custom(_) => crate::skin::def(self).glass,
+            _ => false,
+        }
+    }
 }
 
 /// 岛体形状：贴着屏幕顶边的刘海，或悬浮在顶边下方的胶囊。
@@ -280,7 +293,7 @@ impl Settings {
                 "skin" => {
                     // 早期测试版把胶囊当作皮肤保存。
                     if v == "pill" { s.island_shape = IslandShape::Pill; }
-                    s.skin = Skin::parse(&v);
+                    s.skin = crate::skin::resolve_key(&v);
                 }
                 "island_shape" => s.island_shape = IslandShape::parse(&v),
                 "dock" => s.dock = Dock::parse(&v),

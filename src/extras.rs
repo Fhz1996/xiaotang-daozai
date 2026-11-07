@@ -1213,7 +1213,7 @@ impl App {
                                 let current_label=crate::skin::def(&self.settings.skin).label.clone();
                                 egui::ComboBox::from_id_salt("skin-picker").selected_text(current_label).width(ui.available_width().min(220.0)).truncate().show_ui(ui,|ui|{
                                     for d in crate::skin::all() {
-                                        if ui.selectable_label(d.key==&current_key,d.label.clone()).clicked() {
+                                        if ui.selectable_label(d.key==current_key,d.label.clone()).clicked() {
                                             self.settings.skin=crate::skin::resolve_key(&d.key);
                                         }
                                     }

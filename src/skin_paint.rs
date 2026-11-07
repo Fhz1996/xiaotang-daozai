@@ -29,6 +29,16 @@ pub struct Palette {
 
 /// 奶油（参考 Oyen）：暖白底、深棕字、橙色强调。
 pub const CREAM: Palette = Palette { paper: [255, 243, 228], ink: [46, 32, 22], accent: Some([240, 138, 36]), dark_alpha: 1.0, lift: 1.0, darken: 0.78, chip: 1.0 };
+/// 萝卜（对应萝卜 IP）：橙色萝卜身、绿叶强调、蓝眼睛，圆润卡通。用于缩略态。
+pub const RADISH: Palette = Palette { paper: [242, 100, 24], ink: [36, 24, 12], accent: Some([46, 125, 50]), dark_alpha: 1.0, lift: 1.0, darken: 0.82, chip: 1.0 };
+/// 萝卜·展开：点击打开后的纯白底界面，深棕字、绿叶强调；缩略态仍用橙色。
+pub const RADISH_LIGHT: Palette = Palette { paper: [255, 255, 255], ink: [40, 26, 14], accent: Some([46, 125, 50]), dark_alpha: 1.0, lift: 1.0, darken: 0.78, chip: 0.7 };
+/// 萝卜皮肤下吉祥物的瞳孔蓝（对应 IP 的眼睛）。
+pub const RADISH_EYE: Color32 = Color32::from_rgb(42, 69, 176);
+/// 萝卜皮肤下吉祥物的嘴与音符色（橙底用深色，对应 IP 的黑色嘴）。
+pub const RADISH_INK: Color32 = Color32::from_rgb(30, 20, 10);
+/// 萝卜皮肤下吉祥物张嘴时的舌头色（对应 IP 的粉色舌头）。
+pub const RADISH_TONGUE: Color32 = Color32::from_rgb(226, 110, 128);
 /// 毛玻璃·浅：白色磨砂、近黑字、系统蓝。
 pub const GLASS_LIGHT: Palette = Palette { paper: [255, 255, 255], ink: [22, 22, 26], accent: Some([10, 112, 230]), dark_alpha: 0.8, lift: 1.0, darken: 0.78, chip: 0.6 };
 /// 毛玻璃·深：保持黑底白字，只把灰色文字提亮、卡片底调透，适配更通透的深色玻璃。

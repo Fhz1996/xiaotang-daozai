@@ -1,0 +1,39 @@
+name: 构建萝卜皮肤版
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      CARGO_BUILD_JOBS: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust stable
+        run: rustup toolchain install stable --profile minimal
+
+      - name: 编译发布版
+        run: cargo +stable build --locked --release --bin daozai --target x86_64-pc-windows-msvc
+
+      - name: 打包安装程序（可选，失败不影响 exe）
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $compiler = ./scripts/get-nsis.ps1 -Directory $env:RUNNER_TEMP
+          ./scripts/package.ps1 -SkipBuild -NsisCompiler $compiler
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: daozai-radish
+          if-no-files-found: warn
+          path: |
+            target/x86_64-pc-windows-msvc/release/daozai.exe
+            dist/*.exe
+            dist/*.zip
+            dist/SHA256SUMS.txt

@@ -46,6 +46,7 @@ impl crate::app::App {
         let pointer=ui.ctx().pointer_interact_pos();
         let dragged=egui::DragAndDrop::payload::<usize>(ui.ctx());
         let mut movement=None;
+        let mut keep_colors:Vec<(usize,usize)>=Vec::new();
         let label=|slot|match slot{CLOCK=>"时间",BATTERY=>"电量",QUOTA=>"AI 额度",MUSIC=>"音乐",FOCUS=>"专注",_=>"吉祥物"};
         for (index,&slot) in order.iter().enumerate(){
             let x=cx+layout.x[slot].unwrap();
@@ -70,7 +71,13 @@ impl crate::app::App {
             match slot{
                 BATTERY=>paint::battery(&c,x,15.0,self.resident_power.0,self.resident_power.1,1.0),
                 CLOCK=>{let text=self.settings.clock_text(&chrono::Local::now().format("%H:%M:%S").to_string());paint::clock(&c,x-paint::clock_width(&c,&text,theme::size::PILL_CLOCK)/2.0,21.0,&text,theme::size::PILL_CLOCK);},
-                PET=>self.pet.draw(&c,x,self.t),
+                PET=>{
+                    let from=crate::skin_paint::shape_count(ui.ctx(),ui.layer_id());
+                    self.pet.draw(&c,x,self.t,self.settings.skin);
+                    if self.settings.skin==crate::model::Skin::Radish {
+                        keep_colors.push((from,crate::skin_paint::shape_count(ui.ctx(),ui.layer_id())));
+                    }
+                },
                 MUSIC=>paint::playback_bars(&c,x,15.0,self.t,self.media.playing,theme::WHITE),
                 FOCUS=>crate::focus_bar::draw(&c,x,15.0,self.t,&self.pomo,self.phase_secs(self.pomo.phase),false),
                 QUOTA if count>0=>self.draw_quota_bar(&c,cx,&layout),
@@ -81,7 +88,11 @@ impl crate::app::App {
         }
         if let Some(palette)=self.skin_palette() {
             let end=crate::skin_paint::shape_count(ui.ctx(),ui.layer_id());
-            crate::skin_paint::recolor_layer(ui.ctx(),ui.layer_id(),&[(content_from,end)],&palette);
+            let mut ranges=Vec::new();let mut at=content_from;
+            keep_colors.sort();
+            for (from,to) in keep_colors {if from>at {ranges.push((at,from));} at=at.max(to);}
+            if end>at {ranges.push((at,end));}
+            crate::skin_paint::recolor_layer(ui.ctx(),ui.layer_id(),&ranges,&palette);
         }
         if let Some((slot,index))=movement{
             if let Some(from)=order.iter().position(|value|*value==slot){order.remove(from);order.insert(index,slot);self.settings.resident_order=order;}

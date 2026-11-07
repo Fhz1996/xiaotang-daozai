@@ -91,27 +91,29 @@ pub enum Skin {
     #[default]
     Classic,
     Cream,
+    Radish,
     GlassLight,
     GlassDark,
     Fluid,
 }
 
 impl Skin {
-    pub const ALL: [Skin; 5] = [Skin::Classic, Skin::Cream, Skin::GlassLight, Skin::GlassDark, Skin::Fluid];
+    pub const ALL: [Skin; 6] = [Skin::Classic, Skin::Cream, Skin::Radish, Skin::GlassLight, Skin::GlassDark, Skin::Fluid];
     pub fn key(self) -> &'static str {
-        match self { Self::Classic => "classic", Self::Fluid => "fluid", Self::Cream => "cream", Self::GlassLight => "glass_light", Self::GlassDark => "glass" }
+        match self { Self::Classic => "classic", Self::Fluid => "fluid", Self::Cream => "cream", Self::Radish => "radish", Self::GlassLight => "glass_light", Self::GlassDark => "glass" }
     }
     pub fn parse(value: &str) -> Self {
-        match value { "fluid" => Self::Fluid, "cream" => Self::Cream, "glass_light" => Self::GlassLight, "glass" | "glass_dark" => Self::GlassDark, _ => Self::Classic }
+        match value { "fluid" => Self::Fluid, "cream" => Self::Cream, "radish" => Self::Radish, "glass_light" => Self::GlassLight, "glass" | "glass_dark" => Self::GlassDark, _ => Self::Classic }
     }
     pub fn label(self) -> &'static str {
-        match self { Self::Classic => "经典", Self::Fluid => "悬浮云", Self::Cream => "奶油", Self::GlassLight => "毛玻璃·浅", Self::GlassDark => "毛玻璃·深" }
+        match self { Self::Classic => "经典", Self::Fluid => "悬浮云", Self::Cream => "奶油", Self::Radish => "萝卜", Self::GlassLight => "毛玻璃·浅", Self::GlassDark => "毛玻璃·深" }
     }
     pub fn description(self) -> &'static str {
         match self {
             Self::Classic => "纯黑岛体，与屏幕刘海融为一体，资源占用最低。",
             Self::Fluid => "半透明灰底随音乐封面换色，光晕跟随鼠标，播放进度带有渐隐光尾。皮肤作者：啵（@hanhb123）。",
             Self::Cream => "暖白底色配深棕文字和橙色强调，柔和明亮。",
+            Self::Radish => "橙色萝卜岛体，配绿叶强调与蓝色眼睛，圆润可爱，对应萝卜 IP 配色。",
             Self::GlassLight => "浅色磨砂玻璃，透出身后桌面的颜色，文字为深色；按背景明暗自动调整，保证清晰。",
             Self::GlassDark => "深色磨砂玻璃，透出身后桌面的颜色，文字为白色；按背景明暗自动调整，保证清晰。",
         }

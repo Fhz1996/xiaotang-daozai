@@ -160,12 +160,14 @@ pub(crate) struct Pet {
     eyes: [Eye; 2],
     gaze: [f32; 2],
     y: f32,
+    /// 眨眼闭合程度：0=睁眼，1=闭眼（由 step 每帧按随机节律驱动，与状态无关）。
+    blink: f32,
 }
 
 impl Default for Pet {
     fn default() -> Self {
         Self { state: PetState::Awake, reaction: None, waking_until: 0.0, last_idle: 0.0,
-            hovered: false, worried: false, age: 0.0, eyes: [Eye::open(4.4); 2], gaze: [0.0; 2], y: 0.0 }
+            hovered: false, worried: false, age: 0.0, eyes: [Eye::open(4.4); 2], gaze: [0.0; 2], y: 0.0, blink: 0.0 }
     }
 }
 
@@ -230,11 +232,14 @@ impl Pet {
             PetState::Dozing => { eyes = [Eye::open(0.6); 2]; y = 1.0; look = [0.0; 2]; },
             PetState::Sleeping => { eyes = [Eye::arc(2.4, 1.0); 2]; y = 0.8 + (t as f32 * 1.2).sin() * 0.4; look = [0.0; 2]; },
         }
+        // 眨眼单独存成闭合程度（0..1），不再直接压 eye.height：这样萝卜大眼睛能
+        // 只往中间压缩高度、保持宽度（真·闭眼），而不是把整个眼睛等比缩小。
+        self.blink = 0.0;
         if matches!(state, PetState::Awake | PetState::Curious | PetState::Focused | PetState::Worried) {
             let start = 2.0 + crate::anim::hash01((t / 5.6).floor() as u64) * 2.7;
             let blink = ((t % 5.6) as f32 - start) / 0.18;
             if (0.0..1.0).contains(&blink) {
-                for eye in &mut eyes { eye.height *= 1.0 - (blink * std::f32::consts::PI).sin(); }
+                self.blink = (blink * std::f32::consts::PI).sin();
             }
         }
         let eye_dt=if state==PetState::Music {dt*0.2}else{dt};
@@ -303,7 +308,10 @@ impl Pet {
         for (i, eye) in self.eyes.iter().enumerate() {
             let x = cx + if i == 0 { -5.6 } else { 5.6 } + self.gaze[0];
             let y = 14.5 + self.y + eye.y + self.gaze[1];
-            self.stroke_eye(c, x, y, eye, color);
+            // 眨眼：高度压到 0，豆豆眼闭成一条线（与原版行为一致）。
+            let mut e = *eye;
+            e.height *= 1.0 - self.blink;
+            self.stroke_eye(c, x, y, &e, color);
         }
     }
 
@@ -320,16 +328,22 @@ impl Pet {
     }
 
     /// 大眼睛（萝卜式）：睁眼是白色眼白 + 彩色瞳孔，且瞳孔「对眼」——左眼贴右、右眼贴左；眯眼/闭眼退化成深色弧线。
+    ///
+    /// 缩略态鼠标跟随的两个约定：
+    /// 1. 眼白位置固定（不随 gaze 平移），只有瞳孔在眼白内小幅游走——避免整颗大眼跟着
+    ///    鼠标左右平移导致眼距忽宽忽窄、与嘴巴错位产生「侧面感」。
+    /// 2. 眨眼只把高度往中间压缩（宽度不变，最后合成一条闭眼弧线），而不是整体等比缩放。
     fn draw_cute_eyes(&self, c: &Card, cx: f32, ink: Color32, pupil: Color32, eye_ratio: f32) {
         // 开心：睁圆大眼、瞳孔居中；唱歌：微微睁眼（横向压扁、眼白更小）、瞳孔居中；清醒/担忧等保持对眼。
-        // 所有表情眼白都用同一个不规则蛋形（eye_white），唱歌只是把半高缩小并横向压扁（宽 > 高）。
         let wide = matches!(self.state, PetState::Happy);
         let sing = matches!(self.state, PetState::Music);
         for (i, eye) in self.eyes.iter().enumerate() {
-            let x = cx + if i == 0 { -4.7 } else { 4.7 } + self.gaze[0];
-            let y = 14.5 + self.y + eye.y + self.gaze[1];
+            // 眼白固定位置：只随宠物整体 y 浮动，不随 gaze 平移。
+            let x = cx + if i == 0 { -4.7 } else { 4.7 };
+            let y = 14.5 + self.y + eye.y;
             if wide || sing || eye.height > 1.2 {
-                let wh = if wide {
+                // 满睁眼白高度；眨眼只压高度（上下往中间合拢），宽度保持不变。
+                let wh_full = if wide {
                     4.4 * 0.72            // 开心：睁圆大眼
                 } else if sing {
                     2.5                   // 唱歌：微微睁眼（眼白半高更小）
@@ -337,11 +351,28 @@ impl Pet {
                     eye.height * 0.72
                 };
                 // 唱歌横向压扁（微微睁眼）；其余按眼白宽高比（萝卜竖椭圆 0.73）。
-                let ww = if sing { wh * 1.15 } else { wh * eye_ratio };
+                let ww = if sing { wh_full * 1.15 } else { wh_full * eye_ratio };
+                let open = (1.0 - self.blink).clamp(0.0, 1.0);
+                let wh = wh_full * open;
+                // 闭到只剩一条缝时画成向下弯的闭眼弧线（眼皮合拢），不再画压扁的眼白。
+                if open < 0.14 {
+                    let pts: Vec<_> = (0..=12).map(|n| {
+                        let q = n as f32 / 6.0 - 1.0;
+                        (x + q * ww * 0.9, y + (1.0 - q * q) * 0.65)
+                    }).collect();
+                    c.path(&pts, 1.8, ink);
+                    continue;
+                }
                 eye_white(c, x, y, ww, wh, Color32::WHITE);
-                // 清醒/担忧等对眼且下移；开心/唱歌瞳孔居中。
-                let dx = if wide || sing { 0.0 } else if i == 0 { 0.30 * ww } else { -0.30 * ww };
-                let dy = if wide || sing { 0.0 } else { wh * 0.10 };
+                // 瞳孔：对眼 + 跟随 gaze 的小幅游走，clamp 在眼白内不出界。
+                let max_dx = ww - ww * 0.62;
+                let max_dy = wh - wh * 0.68;
+                let gx = self.gaze[0] * 0.06;
+                let gy = self.gaze[1] * 0.12;
+                let base_dx = if wide || sing { 0.0 } else if i == 0 { 0.30 * ww } else { -0.30 * ww };
+                let base_dy = if wide || sing { 0.0 } else { wh * 0.10 };
+                let dx = (base_dx + gx).clamp(-max_dx, max_dx);
+                let dy = (base_dy + gy).clamp(-max_dy, max_dy);
                 // 瞳孔也用不规则蛋形（eye_white 缩小版），与眼白同源，避免标准椭圆的呆板感。
                 eye_white(c, x + dx, y + dy, ww * 0.62, wh * 0.68, pupil);
             } else {

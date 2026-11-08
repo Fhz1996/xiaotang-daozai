@@ -341,6 +341,8 @@ impl Pet {
         // 开心：睁圆大眼、瞳孔居中；唱歌：微微睁眼（横向压扁、眼白更小）、瞳孔居中；清醒/担忧等保持对眼。
         let wide = matches!(self.state, PetState::Happy);
         let sing = matches!(self.state, PetState::Music);
+        // 萝卜大眼睛在基准上放大 50%（1.5 倍）；唱歌保持「微微睁眼」的收敛小眼。
+        let eye_scale = if sing { 1.0 } else { 1.5 };
         for (i, eye) in self.eyes.iter().enumerate() {
             // 眼白固定位置：只随宠物整体 y 浮动，不随 gaze 平移。
             let x = cx + if i == 0 { -4.7 } else { 4.7 };
@@ -350,11 +352,11 @@ impl Pet {
             if wide || sing || eye.height > 1.2 {
                 // 满睁眼白高度；眨眼只压高度（上下往中间合拢），宽度保持不变。
                 let wh_full = if wide {
-                    4.4 * 0.72            // 开心：睁圆大眼
+                    4.4 * 0.72 * eye_scale // 开心：睁圆大眼
                 } else if sing {
-                    2.5                   // 唱歌：微微睁眼（眼白半高更小）
+                    2.5 * eye_scale        // 唱歌：微微睁眼（眼白半高更小）
                 } else {
-                    eye.height * 0.72
+                    eye.height * 0.72 * eye_scale
                 };
                 // 唱歌横向压扁（微微睁眼）；其余按眼白宽高比（萝卜竖椭圆 0.73）。
                 let ww = if sing { wh_full * 1.15 } else { wh_full * eye_ratio };
@@ -364,9 +366,9 @@ impl Pet {
                 if open < 0.14 {
                     let pts: Vec<_> = (0..=12).map(|n| {
                         let q = n as f32 / 6.0 - 1.0;
-                        (x + q * ww * 0.9, y + (1.0 - q * q) * 0.65)
+                        (x + q * ww * 0.9, y + (1.0 - q * q) * 0.65 * eye_scale)
                     }).collect();
-                    c.path(&pts, 1.8, ink);
+                    c.path(&pts, 1.8 * eye_scale, ink);
                     continue;
                 }
                 eye_white(c, x, y, ww, wh, Color32::WHITE);

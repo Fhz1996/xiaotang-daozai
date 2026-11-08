@@ -341,23 +341,20 @@ impl Pet {
         // 开心：睁圆大眼、瞳孔居中；唱歌：微微睁眼（横向压扁、眼白更小）、瞳孔居中；清醒/担忧等保持对眼。
         let wide = matches!(self.state, PetState::Happy);
         let sing = matches!(self.state, PetState::Music);
-        // 缩略态萝卜大眼睛放大 2 倍（清醒/开心）；唱歌保持「微微睁眼」的收敛小眼。
-        let eye_scale = if sing { 1.0 } else { 2.0 };
         for (i, eye) in self.eyes.iter().enumerate() {
-            // 眼白固定位置：只随宠物整体 y 浮动，不随 gaze 平移；眼距随眼睛放大拉开，
-            // 保持两眼中缝约 1.2 间隙、避免放大后连体。
-            let x = cx + if i == 0 { -5.2 } else { 5.2 };
+            // 眼白固定位置：只随宠物整体 y 浮动，不随 gaze 平移。
+            let x = cx + if i == 0 { -4.7 } else { 4.7 };
             let y = 14.5 + self.y + eye.y;
             // 瞳孔中心：垂直用 pupil_lag（滞后），水平仍与眼白对齐；身体动时眼珠相对眼白有惯性。
             let py = 14.5 + self.pupil_lag + eye.y;
             if wide || sing || eye.height > 1.2 {
                 // 满睁眼白高度；眨眼只压高度（上下往中间合拢），宽度保持不变。
                 let wh_full = if wide {
-                    4.4 * 0.72 * eye_scale // 开心：睁圆大眼
+                    4.4 * 0.72            // 开心：睁圆大眼
                 } else if sing {
-                    2.5 * eye_scale        // 唱歌：微微睁眼（眼白半高更小）
+                    2.5                   // 唱歌：微微睁眼（眼白半高更小）
                 } else {
-                    eye.height * 0.72 * eye_scale
+                    eye.height * 0.72
                 };
                 // 唱歌横向压扁（微微睁眼）；其余按眼白宽高比（萝卜竖椭圆 0.73）。
                 let ww = if sing { wh_full * 1.15 } else { wh_full * eye_ratio };
@@ -367,9 +364,9 @@ impl Pet {
                 if open < 0.14 {
                     let pts: Vec<_> = (0..=12).map(|n| {
                         let q = n as f32 / 6.0 - 1.0;
-                        (x + q * ww * 0.9, y + (1.0 - q * q) * 0.65 * eye_scale)
+                        (x + q * ww * 0.9, y + (1.0 - q * q) * 0.65)
                     }).collect();
-                    c.path(&pts, 1.8 * eye_scale, ink);
+                    c.path(&pts, 1.8, ink);
                     continue;
                 }
                 eye_white(c, x, y, ww, wh, Color32::WHITE);

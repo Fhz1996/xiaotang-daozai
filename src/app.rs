@@ -2365,17 +2365,26 @@ impl App {
 
     fn page_title(&self, page: usize, c: &Card) {
         let base = 25.0;
+        // 萝卜主题：标题点缀色用萝卜 IP 四色（白=文字、橙=身体、蓝=眼睛、绿=叶子）。
+        let radish = crate::skin::def(&self.settings.skin).key.as_str() == "radish";
+        let orange = Color32::from_rgb(242, 100, 24);
+        let blue = Color32::from_rgb(42, 69, 176);
+        let green = Color32::from_rgb(46, 125, 50);
         let (a, b, col) = match page {
             0 | CALENDAR_PAGE => return,
-            1 => ("番茄", "专注", theme::RED_TOP),
-            2 => ("饮水", "提醒", theme::BLUE),
+            1 => ("番茄", "专注", if radish { orange } else { theme::RED_TOP }),
+            2 => ("饮水", "提醒", if radish { blue } else { theme::BLUE }),
             // 置物架的标题就是「置物架 | 剪贴板」分栏，由页面自己画。
             3 => return,
-            4 => ("待办", "清单", theme::GREEN),
-            5 => ("邮箱", "", theme::CYAN),
-            6 => ("AI", "额度", theme::SOFT_GREEN),
+            4 => ("待办", "清单", if radish { green } else { theme::GREEN }),
+            5 => ("邮箱", "", if radish { blue } else { theme::CYAN }),
+            6 => ("AI", "额度", if radish { green } else { theme::SOFT_GREEN }),
             _ => ("岛仔", "设置", theme::WHITE),
         };
+        // 萝卜主题下，标题前加一颗点缀圆点（橙/蓝/绿）；设置页后段是白色，跳过圆点。
+        if radish && col != theme::WHITE {
+            c.circle(8.5, base - 5.5, 2.6, col);
+        }
         let wa = c.text(15.0, base, a, size::TITLE, W::Bold, theme::WHITE, H::Left);
         if !b.is_empty() {
             c.text(15.0 + wa + 1.5, base, b, size::TITLE, W::Bold, col, H::Left);

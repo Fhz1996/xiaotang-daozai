@@ -2369,7 +2369,8 @@ impl App {
         let radish = crate::skin::def(&self.settings.skin).key.as_str() == "radish";
         let orange = Color32::from_rgb(242, 100, 24);
         let blue = Color32::from_rgb(42, 69, 176);
-        let green = Color32::from_rgb(46, 125, 50);
+        // 绿色用亮一点的叶绿（max>0.5），否则 map_color 会把它当成「深色底块」洗成惨淡的浅绿，看不清。
+        let green = Color32::from_rgb(76, 175, 80);
         let (a, b, col) = match page {
             0 | CALENDAR_PAGE => return,
             1 => ("番茄", "专注", if radish { orange } else { theme::RED_TOP }),

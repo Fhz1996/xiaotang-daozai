@@ -143,26 +143,6 @@ fn eye_white(c: &Card, cx: f32, cy: f32, rx: f32, ry: f32, color: Color32) {
     c.poly(&pts, color);
 }
 
-/// 画「下半月」形状：顶边是略微下弯的眼皮线（中间下垂 sag），底边是圆润的半椭圆下眼睑。
-/// 半睁眼专用——上眼皮盖住上半、只露下半眼白，比整体压扁的对称椭圆更软、更像打盹。
-fn half_moon(c: &Card, x: f32, top: f32, ww: f32, vis: f32, sag: f32, color: Color32) {
-    let n = 24usize;
-    let mut pts: Vec<(f32, f32)> = Vec::with_capacity(n * 2 + 1);
-    // 顶边（眼皮线）：左→右，中间下垂 sag。
-    for i in 0..=n {
-        let q = i as f32 / n as f32;
-        let px = x - ww + 2.0 * ww * q;
-        let py = top + (1.0 - (2.0 * q - 1.0).powi(2)) * sag;
-        pts.push((px, py));
-    }
-    // 底边：右→左，半个椭圆弧（与顶边两端严丝合缝）。
-    for i in 1..=n {
-        let th = i as f32 / n as f32 * std::f32::consts::PI;
-        pts.push((x + ww * th.cos(), top + sag + vis * th.sin()));
-    }
-    c.poly(&pts, color);
-}
-
 #[derive(Clone, Copy)]
 struct Eye {
     height: f32,
@@ -251,9 +231,9 @@ impl Pet {
                 let sway=(age*1.4).sin();
                 look=[0.0,0.0];y=-0.5+sway*0.25;
                 match self.music_pose() {
-                    // 拿话筒/侧身唱：半睁眼（比缩略态大眼略收，带唱歌陶醉感）；侧身唱更眯一点，其余 pose 闭眼。
-                    MusicPose::Microphone=>{eyes=[Eye::open(2.8);2];},
-                    MusicPose::SideSing=>{eyes=[Eye::open(2.4);2];eyes[0].y=-0.5;eyes[1].y=0.5;look=[0.4,0.0];y=sway*0.35;},
+                    // 拿话筒唱=缩略态大眼（对眼全睁）；侧身唱=半睁大眼（高度略收、仍对眼下移）；其余 pose 闭眼。
+                    MusicPose::Microphone=>{eyes=[Eye::open(4.4);2];},
+                    MusicPose::SideSing=>{eyes=[Eye::open(3.0);2];eyes[0].y=-0.5;eyes[1].y=0.5;look=[0.4,0.0];y=sway*0.35;},
                     MusicPose::HighNote=>{eyes=[Eye::arc(2.3,-0.7);2];eyes[0].tilt=-0.3;eyes[1].tilt=0.3;y=-1.5+sway*0.2;},
                     MusicPose::Hum=>{eyes=[Eye::arc(2.5,0.7);2];y=sway*0.3;},
                     MusicPose::Squint=>{eyes=[Eye::arc(1.6,0.0);2];y=sway*0.45;},
@@ -406,21 +386,21 @@ impl Pet {
                     c.path(&pts, 1.8 * eye_scale, ink);
                     continue;
                 }
-                // 半睁（唱歌拿话筒/侧身唱）：上眼皮盖下、只露下半月眼白 + 偏下的圆眼珠，
-                // 再勾一条眼皮线，比整体压扁的对称椭圆更柔和、不呆板。
-                if self.state == PetState::Music && !wide {
-                    let sag = 0.26 * eye_scale;
-                    let vis = (wh - sag).max(0.4);
-                    let top = y - vis * 0.5;
-                    half_moon(c, x, top, ww, vis, sag, Color32::WHITE);
-                    let base_dx = if i == 0 { 0.30 * ww } else { -0.30 * ww };
+                // 半睁（侧身唱）：仍是缩略态大眼——大眼白 + 瞳孔对眼下移，只是顶部加一条
+                // 微垂的眼皮线提示"半睁"；不再用 half_moon 月牙（那只露一条缝，把缩略态大眼做没了）。
+                if self.state == PetState::Music && matches!(self.music_pose(), MusicPose::SideSing) {
+                    eye_white(c, x, y, ww, wh, Color32::WHITE);
+                    let max_dx = ww - ww * 0.62;
+                    let max_dy = wh - wh * 0.68;
                     let gx = self.gaze[0] * 0.22;
                     let gy = self.gaze[1] * 0.20;
-                    let pcy = top + sag + vis * 0.55 + gy;
-                    eye_white(c, x + base_dx + gx, pcy, ww * 0.5, vis * 0.35, pupil);
+                    let base_dx = if i == 0 { 0.30 * ww } else { -0.30 * ww };
+                    let dx = (base_dx + gx).clamp(-max_dx, max_dx);
+                    let dy = (wh * 0.10 + gy).clamp(-max_dy, max_dy);
+                    eye_white(c, x + dx, y + dy, ww * 0.62, wh * 0.68, pupil);
                     let lid: Vec<_> = (0..=16).map(|n| {
                         let q = n as f32 / 8.0 - 1.0;
-                        (x + q * ww, top + (1.0 - q * q) * sag)
+                        (x + q * ww, y - wh * 0.5 + (1.0 - q * q) * (wh * 0.20))
                     }).collect();
                     c.path(&lid, 1.15 * eye_scale, ink);
                     continue;

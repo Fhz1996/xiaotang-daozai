@@ -299,8 +299,12 @@ impl Pet {
             PetState::Satisfied => crate::paint::droplet(c,cx+18.0,12.0,5.0,theme::CYAN),
             PetState::Music => {
                 if cute_mouth {
-                    // 萝卜式唱歌：睁圆眼 + 圆形 O 嘴（与开心的大笑横嘴区分）+ 手持麦克风。
-                    self.draw_sing_mouth(c, cx, ink);
+                    // 萝卜式唱歌：睁眼 pose（拿话筒/侧身唱）脸回到缩略态——大眼 + 波浪嘴；
+                    // 眯眼 pose（哼/眯/高音/微笑）闭眼 + 圆形 O 嘴开合。两者都手持麦克风。
+                    match self.music_pose() {
+                        MusicPose::Microphone | MusicPose::SideSing => self.draw_wave_mouth(c, cx, ink),
+                        _ => self.draw_sing_mouth(c, cx, ink),
+                    }
                     microphone_radish(c, cx, self.y + self.gaze[1], self.age);
                 } else {
                     let alpha=smoothstep(0.0,1.0,self.age%MUSIC_PERIOD);

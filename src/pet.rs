@@ -231,9 +231,9 @@ impl Pet {
                 let sway=(age*1.4).sin();
                 look=[0.0,0.0];y=-0.5+sway*0.25;
                 match self.music_pose() {
-                    // 拿话筒唱=缩略态大眼（对眼全睁）；侧身唱=半睁大眼（高度略收、仍对眼下移）；其余 pose 闭眼。
-                    MusicPose::Microphone=>{eyes=[Eye::open(4.4);2];},
-                    MusicPose::SideSing=>{eyes=[Eye::open(3.0);2];eyes[0].y=-0.5;eyes[1].y=0.5;look=[0.4,0.0];y=sway*0.35;},
+                    // 拿话筒/侧身唱：微微睁眼（横向压扁蛋形，定稿半高 2.5/2.0，不放大）；其余 pose 闭眼。
+                    MusicPose::Microphone=>{eyes=[Eye::open(2.5);2];},
+                    MusicPose::SideSing=>{eyes=[Eye::open(2.0);2];eyes[0].y=-0.5;eyes[1].y=0.5;look=[0.4,0.0];y=sway*0.35;},
                     MusicPose::HighNote=>{eyes=[Eye::arc(2.3,-0.7);2];eyes[0].tilt=-0.3;eyes[1].tilt=0.3;y=-1.5+sway*0.2;},
                     MusicPose::Hum=>{eyes=[Eye::arc(2.5,0.7);2];y=sway*0.3;},
                     MusicPose::Squint=>{eyes=[Eye::arc(1.6,0.0);2];y=sway*0.45;},
@@ -354,28 +354,55 @@ impl Pet {
     ///    鼠标左右平移导致眼距忽宽忽窄、与嘴巴错位产生「侧面感」。
     /// 2. 眨眼只把高度往中间压缩（宽度不变，最后合成一条闭眼弧线），而不是整体等比缩放。
     fn draw_cute_eyes(&self, c: &Card, cx: f32, ink: Color32, pupil: Color32, eye_ratio: f32) {
-        // 开心：睁圆大眼、瞳孔居中；唱歌睁眼 pose 用大眼（与缩略态完全一致，瞳孔也对眼下移）；
-        // 唱歌眯眼 pose 闭成弧线；清醒/担忧等保持对眼。
+        // 开心：睁圆大眼、瞳孔居中；唱歌态：微微睁的横向压扁蛋形（睁眼 pose）+ 弧线（闭眼 pose），
+        // 宽度统一 2.875、不放大；清醒/担忧等保持缩略态大眼（对眼下移）。
         let wide = matches!(self.state, PetState::Happy);
-        // 萝卜大眼睛在基准上放大 50%（1.5 倍）；唱歌睁眼时也用同样的大眼，不再单独收成小扁眼。
+        // 唱歌态整体独立绘制（宽度固定 2.875），睁眼/闭眼靠 eye.height 平滑过渡。
+        let in_music = self.state == PetState::Music;
+        // 缩略态大眼在基准上放大 50%（1.5 倍）；唱歌态「微微睁眼」不放大（保持 1 倍基准，见 radish-eye150 定稿）。
         let eye_scale = 1.5;
         for (i, eye) in self.eyes.iter().enumerate() {
             // 眼白固定位置：只随宠物整体 y 浮动，不随 gaze 平移。
             let x = cx + if i == 0 { -4.7 } else { 4.7 };
             let y = 14.5 + self.y + eye.y;
-            // 睁眼（开心/清醒大眼，以及唱歌的睁眼 pose）；唱歌眯眼 pose（Eye::arc，height≈0）走闭眼弧线。
+            // 唱歌态：眼睛整体独立绘制，宽度固定 2.875（横向压扁基准，不放大）。
+            if in_music {
+                let rw = 2.875;
+                let open = (1.0 - self.blink).clamp(0.0, 1.0);
+                let rh = eye.height * open;
+                if rh < 0.14 {
+                    // 眨眼（睁眼 pose 短暂闭合）向下弯；表情闭眼（闭眼 pose）按 curve 弯向。
+                    let curve = if eye.height < 0.14 { eye.curve * eye_scale } else { 0.65 * eye_scale };
+                    let pts: Vec<_> = (0..=12).map(|n| {
+                        let q = n as f32 / 6.0 - 1.0;
+                        (x + q * rw * 0.9, y + (1.0 - q * q) * curve)
+                    }).collect();
+                    c.path(&pts, 1.8 * eye_scale, ink);
+                } else {
+                    eye_white(c, x, y, rw, rh, Color32::WHITE);
+                    // 瞳孔对眼下移（左眼贴右、右眼贴左），clamp 不出眼白。
+                    let max_dx = rw - rw * 0.62;
+                    let max_dy = rh - rh * 0.68;
+                    let gx = self.gaze[0] * 0.22;
+                    let gy = self.gaze[1] * 0.20;
+                    let base_dx = if i == 0 { 0.30 * rw } else { -0.30 * rw };
+                    let dx = (base_dx + gx).clamp(-max_dx, max_dx);
+                    let dy = (rh * 0.10 + gy).clamp(-max_dy, max_dy);
+                    eye_white(c, x + dx, y + dy, rw * 0.62, rh * 0.68, pupil);
+                }
+                continue;
+            }
+            // 非唱歌：睁眼（开心/清醒大眼）；闭眼/眯眼（eye.height<=1.2）走弧线。
             if wide || eye.height > 1.2 {
-                // 满睁眼白高度；眨眼只压高度（上下往中间合拢），宽度保持不变。
+                let open = (1.0 - self.blink).clamp(0.0, 1.0);
+                // 缩略态大眼（开心/清醒/担忧）：满睁高度基准，眨眼只压高度（宽度不变）。
                 let full_h = 4.4 * 0.72 * eye_scale; // 满睁高度基准（缩略态大眼）
                 let wh_full = if wide {
                     full_h // 开心：睁圆大眼
                 } else {
                     eye.height * 0.72 * eye_scale
                 };
-                // 宽度：唱歌半睁时保持满睁宽度（只压高度、不缩宽度）；其余状态宽度随高度。
-                // 萝卜竖椭圆眼白宽高比 0.73。
-                let ww = if self.state == PetState::Music { full_h * eye_ratio } else { wh_full * eye_ratio };
-                let open = (1.0 - self.blink).clamp(0.0, 1.0);
+                let ww = wh_full * eye_ratio;
                 let wh = wh_full * open;
                 // 闭到只剩一条缝时画成向下弯的闭眼弧线（眼皮合拢），不再画压扁的眼白。
                 if open < 0.14 {
@@ -386,32 +413,13 @@ impl Pet {
                     c.path(&pts, 1.8 * eye_scale, ink);
                     continue;
                 }
-                // 半睁（侧身唱）：仍是缩略态大眼——大眼白 + 瞳孔对眼下移，只是顶部加一条
-                // 微垂的眼皮线提示"半睁"；不再用 half_moon 月牙（那只露一条缝，把缩略态大眼做没了）。
-                if self.state == PetState::Music && matches!(self.music_pose(), MusicPose::SideSing) {
-                    eye_white(c, x, y, ww, wh, Color32::WHITE);
-                    let max_dx = ww - ww * 0.62;
-                    let max_dy = wh - wh * 0.68;
-                    let gx = self.gaze[0] * 0.22;
-                    let gy = self.gaze[1] * 0.20;
-                    let base_dx = if i == 0 { 0.30 * ww } else { -0.30 * ww };
-                    let dx = (base_dx + gx).clamp(-max_dx, max_dx);
-                    let dy = (wh * 0.10 + gy).clamp(-max_dy, max_dy);
-                    eye_white(c, x + dx, y + dy, ww * 0.62, wh * 0.68, pupil);
-                    let lid: Vec<_> = (0..=16).map(|n| {
-                        let q = n as f32 / 8.0 - 1.0;
-                        (x + q * ww, y - wh * 0.5 + (1.0 - q * q) * (wh * 0.20))
-                    }).collect();
-                    c.path(&lid, 1.15 * eye_scale, ink);
-                    continue;
-                }
                 eye_white(c, x, y, ww, wh, Color32::WHITE);
                 // 瞳孔：对眼 + 跟随 gaze 的小幅游走，clamp 在眼白内不出界。
                 let max_dx = ww - ww * 0.62;
                 let max_dy = wh - wh * 0.68;
                 let gx = self.gaze[0] * 0.22;
                 let gy = self.gaze[1] * 0.20;
-                // 开心睁圆眼瞳孔居中；唱歌睁眼/清醒/担忧等都对眼 + 下移（与缩略态一致）。
+                // 开心睁圆眼瞳孔居中；清醒/担忧等都对眼 + 下移（与缩略态一致）。
                 let base_dx = if wide { 0.0 } else if i == 0 { 0.30 * ww } else { -0.30 * ww };
                 let base_dy = if wide { 0.0 } else { wh * 0.10 };
                 let dx = (base_dx + gx).clamp(-max_dx, max_dx);

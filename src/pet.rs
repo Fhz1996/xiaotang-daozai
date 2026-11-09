@@ -143,6 +143,26 @@ fn eye_white(c: &Card, cx: f32, cy: f32, rx: f32, ry: f32, color: Color32) {
     c.poly(&pts, color);
 }
 
+/// 画「下半月」形状：顶边是略微下弯的眼皮线（中间下垂 sag），底边是圆润的半椭圆下眼睑。
+/// 半睁眼专用——上眼皮盖住上半、只露下半眼白，比整体压扁的对称椭圆更软、更像打盹。
+fn half_moon(c: &Card, x: f32, top: f32, ww: f32, vis: f32, sag: f32, color: Color32) {
+    let n = 24usize;
+    let mut pts: Vec<(f32, f32)> = Vec::with_capacity(n * 2 + 1);
+    // 顶边（眼皮线）：左→右，中间下垂 sag。
+    for i in 0..=n {
+        let q = i as f32 / n as f32;
+        let px = x - ww + 2.0 * ww * q;
+        let py = top + (1.0 - (2.0 * q - 1.0).powi(2)) * sag;
+        pts.push((px, py));
+    }
+    // 底边：右→左，半个椭圆弧（与顶边两端严丝合缝）。
+    for i in 1..=n {
+        let th = i as f32 / n as f32 * std::f32::consts::PI;
+        pts.push((x + ww * th.cos(), top + sag + vis * th.sin()));
+    }
+    c.poly(&pts, color);
+}
+
 #[derive(Clone, Copy)]
 struct Eye {
     height: f32,
@@ -384,6 +404,25 @@ impl Pet {
                         (x + q * ww * 0.9, y + (1.0 - q * q) * 0.65 * eye_scale)
                     }).collect();
                     c.path(&pts, 1.8 * eye_scale, ink);
+                    continue;
+                }
+                // 半睁（唱歌拿话筒/侧身唱）：上眼皮盖下、只露下半月眼白 + 偏下的圆眼珠，
+                // 再勾一条眼皮线，比整体压扁的对称椭圆更柔和、不呆板。
+                if self.state == PetState::Music && !wide {
+                    let sag = 0.26 * eye_scale;
+                    let vis = (wh - sag).max(0.4);
+                    let top = y - vis * 0.5;
+                    half_moon(c, x, top, ww, vis, sag, Color32::WHITE);
+                    let base_dx = if i == 0 { 0.30 * ww } else { -0.30 * ww };
+                    let gx = self.gaze[0] * 0.22;
+                    let gy = self.gaze[1] * 0.20;
+                    let pcy = top + sag + vis * 0.55 + gy;
+                    eye_white(c, x + base_dx + gx, pcy, ww * 0.5, vis * 0.35, pupil);
+                    let lid: Vec<_> = (0..=16).map(|n| {
+                        let q = n as f32 / 8.0 - 1.0;
+                        (x + q * ww, top + (1.0 - q * q) * sag)
+                    }).collect();
+                    c.path(&lid, 1.15 * eye_scale, ink);
                     continue;
                 }
                 eye_white(c, x, y, ww, wh, Color32::WHITE);

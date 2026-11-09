@@ -177,14 +177,12 @@ pub(crate) struct Pet {
     y: f32,
     /// 眨眼闭合程度：0=睁眼，1=闭眼（由 step 每帧按随机节律驱动，与状态无关）。
     blink: f32,
-    /// 瞳孔的垂直滞后：比身体 y 慢半拍地逼近，身体浮动/跳跃时眼珠相对眼白产生惯性位移。
-    pupil_lag: f32,
 }
 
 impl Default for Pet {
     fn default() -> Self {
         Self { state: PetState::Awake, reaction: None, waking_until: 0.0, last_idle: 0.0,
-            hovered: false, worried: false, age: 0.0, eyes: [Eye::open(4.4); 2], gaze: [0.0; 2], y: 0.0, blink: 0.0, pupil_lag: 0.0 }
+            hovered: false, worried: false, age: 0.0, eyes: [Eye::open(4.4); 2], gaze: [0.0; 2], y: 0.0, blink: 0.0 }
     }
 }
 
@@ -264,8 +262,6 @@ impl Pet {
         for (eye, goal) in self.eyes.iter_mut().zip(eyes) { eye.follow(goal, eye_dt); }
         for (axis, goal) in self.gaze.iter_mut().zip(look) { *axis = approach(*axis, goal, 10.0, dt); }
         self.y = approach(self.y, y, 14.0, dt);
-        // 瞳孔滞后：以更慢的速度逼近身体 y，身体动时眼珠相对眼白产生惯性（眼球「跟不上」身体）。
-        self.pupil_lag = approach(self.pupil_lag, self.y, 3.5, dt);
     }
 
     pub fn draw(&self, c: &Card, cx: f32, t: f64, skin: &Skin) {
@@ -367,18 +363,18 @@ impl Pet {
             // 眼白固定位置：只随宠物整体 y 浮动，不随 gaze 平移。
             let x = cx + if i == 0 { -4.7 } else { 4.7 };
             let y = 14.5 + self.y + eye.y;
-            // 瞳孔中心：垂直用 pupil_lag（滞后），水平仍与眼白对齐；身体动时眼珠相对眼白有惯性。
-            let py = 14.5 + self.pupil_lag + eye.y;
             // 睁眼（开心/清醒大眼，以及唱歌的睁眼 pose）；唱歌眯眼 pose（Eye::arc，height≈0）走闭眼弧线。
             if wide || eye.height > 1.2 {
                 // 满睁眼白高度；眨眼只压高度（上下往中间合拢），宽度保持不变。
+                let full_h = 4.4 * 0.72 * eye_scale; // 满睁高度基准（缩略态大眼）
                 let wh_full = if wide {
-                    4.4 * 0.72 * eye_scale // 开心：睁圆大眼
+                    full_h // 开心：睁圆大眼
                 } else {
                     eye.height * 0.72 * eye_scale
                 };
+                // 宽度：唱歌半睁时保持满睁宽度（只压高度、不缩宽度）；其余状态宽度随高度。
                 // 萝卜竖椭圆眼白宽高比 0.73。
-                let ww = wh_full * eye_ratio;
+                let ww = if self.state == PetState::Music { full_h * eye_ratio } else { wh_full * eye_ratio };
                 let open = (1.0 - self.blink).clamp(0.0, 1.0);
                 let wh = wh_full * open;
                 // 闭到只剩一条缝时画成向下弯的闭眼弧线（眼皮合拢），不再画压扁的眼白。
@@ -402,7 +398,7 @@ impl Pet {
                 let dx = (base_dx + gx).clamp(-max_dx, max_dx);
                 let dy = (base_dy + gy).clamp(-max_dy, max_dy);
                 // 瞳孔也用不规则蛋形（eye_white 缩小版），与眼白同源，避免标准椭圆的呆板感。
-                eye_white(c, x + dx, py + dy, ww * 0.62, wh * 0.68, pupil);
+                eye_white(c, x + dx, y + dy, ww * 0.62, wh * 0.68, pupil);
             } else {
                 // 闭眼/眯眼：闭成一条弧线，宽度与睁眼一致；弯向由 eye.curve 决定（正=向下弯闭眼，负=向上弯笑眼）。
                 let ww = (4.4 * 0.72 * eye_scale) * eye_ratio;

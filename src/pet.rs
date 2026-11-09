@@ -83,9 +83,24 @@ fn microphone_pose(age:f32)->([f32;2],f32) {
     ([5.9+(age*0.95).sin()*0.4,20.8+(age*1.35).sin()*0.6],35.0_f32.to_radians()+(age*1.1).sin()*0.10)
 }
 
+/// 萝卜唱歌话筒：麦头贴到萝卜嘴边（萝卜嘴在 y≈23.5，比原版嘴 20.7 低），柄更陡、斜向下。
+fn microphone_pose_radish(age:f32)->([f32;2],f32) {
+    ([6.0+(age*0.95).sin()*0.4,22.6+(age*1.35).sin()*0.6],46.0_f32.to_radians()+(age*1.1).sin()*0.10)
+}
+
 fn microphone(c:&Card,cx:f32,y:f32,age:f32){
     let age=if crate::bar_layout::animations_enabled(){age}else{0.0};
     let (head,angle)=microphone_pose(age);
+    draw_microphone(c,cx,y,head,angle);
+}
+
+fn microphone_radish(c:&Card,cx:f32,y:f32,age:f32){
+    let age=if crate::bar_layout::animations_enabled(){age}else{0.0};
+    let (head,angle)=microphone_pose_radish(age);
+    draw_microphone(c,cx,y,head,angle);
+}
+
+fn draw_microphone(c:&Card,cx:f32,y:f32,head:[f32;2],angle:f32){
     let point=|s:f32,v:f32|(cx+head[0]+s*angle.cos()-v*angle.sin(),y+head[1]+s*angle.sin()+v*angle.cos());
     let capsule=|start:f32,end:f32,width:f32,color:Color32|{
         let a=point(start,0.0);let b=point(end,0.0);
@@ -96,9 +111,9 @@ fn microphone(c:&Card,cx:f32,y:f32,age:f32){
     capsule(2.5,6.8,1.45,Color32::from_rgb(76,84,101));
     line((3.4,-0.53),(6.4,-0.53),0.28,Color32::from_rgb(218,225,237));
     capsule(2.05,2.65,2.6,Color32::from_rgb(126,137,157));
-    let head=point(0.0,0.0);
-    c.circle(head.0,head.1,2.6,Color32::from_rgb(222,228,238));
-    c.circle(head.0,head.1,2.15,Color32::from_rgb(164,176,194));
+    let head_pt=point(0.0,0.0);
+    c.circle(head_pt.0,head_pt.1,2.6,Color32::from_rgb(222,228,238));
+    c.circle(head_pt.0,head_pt.1,2.15,Color32::from_rgb(164,176,194));
     for s in [-1.0f32,0.0,1.0] {let v=(4.0-s*s).sqrt()*0.88;line((s,-v),(s,v),0.32,Color32::from_rgb(92,105,126));}
     for v in [-1.0f32,0.0,1.0] {let s=(4.0-v*v).sqrt()*0.88;line((-s,v),(s,v),0.3,Color32::from_rgb(226,232,243));}
 }
@@ -218,8 +233,9 @@ impl Pet {
                 let sway=(age*1.4).sin();
                 look=[0.0,0.0];y=-0.5+sway*0.25;
                 match self.music_pose() {
-                    MusicPose::Microphone=>{eyes=[Eye::arc(2.5,0.7);2];},
-                    MusicPose::SideSing=>{eyes=[Eye::open(1.6);2];eyes[0].y=-0.5;eyes[1].y=0.5;look=[0.4,0.0];y=sway*0.35;},
+                    // 拿话筒/侧身唱：睁着萝卜大眼（与缩略态一致）；侧身唱眼睛略收一点，其余 pose 闭眼/眯眼。
+                    MusicPose::Microphone=>{eyes=[Eye::open(4.4);2];},
+                    MusicPose::SideSing=>{eyes=[Eye::open(3.4);2];eyes[0].y=-0.5;eyes[1].y=0.5;look=[0.4,0.0];y=sway*0.35;},
                     MusicPose::HighNote=>{eyes=[Eye::arc(2.3,-0.7);2];eyes[0].tilt=-0.3;eyes[1].tilt=0.3;y=-1.5+sway*0.2;},
                     MusicPose::Hum=>{eyes=[Eye::arc(2.5,0.7);2];y=sway*0.3;},
                     MusicPose::Squint=>{eyes=[Eye::arc(1.6,0.0);2];y=sway*0.45;},
@@ -285,7 +301,7 @@ impl Pet {
                 if cute_mouth {
                     // 萝卜式唱歌：睁圆眼 + 圆形 O 嘴（与开心的大笑横嘴区分）+ 手持麦克风。
                     self.draw_sing_mouth(c, cx, ink);
-                    microphone(c, cx, self.y + self.gaze[1], self.age);
+                    microphone_radish(c, cx, self.y + self.gaze[1], self.age);
                 } else {
                     let alpha=smoothstep(0.0,1.0,self.age%MUSIC_PERIOD);
                     if self.age>=MUSIC_PERIOD && alpha<1.0 {
@@ -338,28 +354,28 @@ impl Pet {
     ///    鼠标左右平移导致眼距忽宽忽窄、与嘴巴错位产生「侧面感」。
     /// 2. 眨眼只把高度往中间压缩（宽度不变，最后合成一条闭眼弧线），而不是整体等比缩放。
     fn draw_cute_eyes(&self, c: &Card, cx: f32, ink: Color32, pupil: Color32, eye_ratio: f32) {
-        // 开心：睁圆大眼、瞳孔居中；唱歌：微微睁眼（横向压扁、眼白更小）、瞳孔居中；清醒/担忧等保持对眼。
+        // 开心：睁圆大眼、瞳孔居中；唱歌：睁眼 pose 用大眼（与缩略态一致）、眯眼 pose 闭成弧线；
+        // 清醒/担忧等保持对眼。
         let wide = matches!(self.state, PetState::Happy);
         let sing = matches!(self.state, PetState::Music);
-        // 萝卜大眼睛在基准上放大 50%（1.5 倍）；唱歌保持「微微睁眼」的收敛小眼。
-        let eye_scale = if sing { 1.0 } else { 1.5 };
+        // 萝卜大眼睛在基准上放大 50%（1.5 倍）；唱歌睁眼时也用同样的大眼，不再单独收成小扁眼。
+        let eye_scale = 1.5;
         for (i, eye) in self.eyes.iter().enumerate() {
             // 眼白固定位置：只随宠物整体 y 浮动，不随 gaze 平移。
             let x = cx + if i == 0 { -4.7 } else { 4.7 };
             let y = 14.5 + self.y + eye.y;
             // 瞳孔中心：垂直用 pupil_lag（滞后），水平仍与眼白对齐；身体动时眼珠相对眼白有惯性。
             let py = 14.5 + self.pupil_lag + eye.y;
-            if wide || sing || eye.height > 1.2 {
+            // 睁眼（开心/清醒大眼，以及唱歌的睁眼 pose）；唱歌眯眼 pose（Eye::arc，height≈0）走闭眼弧线。
+            if wide || eye.height > 1.2 {
                 // 满睁眼白高度；眨眼只压高度（上下往中间合拢），宽度保持不变。
                 let wh_full = if wide {
                     4.4 * 0.72 * eye_scale // 开心：睁圆大眼
-                } else if sing {
-                    2.5 * eye_scale        // 唱歌：微微睁眼（眼白半高更小）
                 } else {
                     eye.height * 0.72 * eye_scale
                 };
-                // 唱歌横向压扁（微微睁眼）；其余按眼白宽高比（萝卜竖椭圆 0.73）。
-                let ww = if sing { wh_full * 1.15 } else { wh_full * eye_ratio };
+                // 萝卜竖椭圆眼白宽高比 0.73。
+                let ww = wh_full * eye_ratio;
                 let open = (1.0 - self.blink).clamp(0.0, 1.0);
                 let wh = wh_full * open;
                 // 闭到只剩一条缝时画成向下弯的闭眼弧线（眼皮合拢），不再画压扁的眼白。
@@ -377,6 +393,7 @@ impl Pet {
                 let max_dy = wh - wh * 0.68;
                 let gx = self.gaze[0] * 0.22;
                 let gy = self.gaze[1] * 0.20;
+                // 开心/唱歌睁眼瞳孔居中；其余对眼。
                 let base_dx = if wide || sing { 0.0 } else if i == 0 { 0.30 * ww } else { -0.30 * ww };
                 let base_dy = if wide || sing { 0.0 } else { wh * 0.10 };
                 let dx = (base_dx + gx).clamp(-max_dx, max_dx);
@@ -384,7 +401,14 @@ impl Pet {
                 // 瞳孔也用不规则蛋形（eye_white 缩小版），与眼白同源，避免标准椭圆的呆板感。
                 eye_white(c, x + dx, py + dy, ww * 0.62, wh * 0.68, pupil);
             } else {
-                self.stroke_eye(c, x, y, eye, ink);
+                // 闭眼/眯眼：闭成一条弧线，宽度与睁眼一致；弯向由 eye.curve 决定（正=向下弯闭眼，负=向上弯笑眼）。
+                let ww = (4.4 * 0.72 * eye_scale) * eye_ratio;
+                let curve = eye.curve * eye_scale;
+                let pts: Vec<_> = (0..=12).map(|n| {
+                    let q = n as f32 / 6.0 - 1.0;
+                    (x + q * ww * 0.9, y + (1.0 - q * q) * curve)
+                }).collect();
+                c.path(&pts, 1.8 * eye_scale, ink);
             }
         }
     }

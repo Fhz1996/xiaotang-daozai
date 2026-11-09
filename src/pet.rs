@@ -233,9 +233,9 @@ impl Pet {
                 let sway=(age*1.4).sin();
                 look=[0.0,0.0];y=-0.5+sway*0.25;
                 match self.music_pose() {
-                    // 拿话筒/侧身唱：睁着萝卜大眼（与缩略态一致）；侧身唱眼睛略收一点，其余 pose 闭眼/眯眼。
-                    MusicPose::Microphone=>{eyes=[Eye::open(4.4);2];},
-                    MusicPose::SideSing=>{eyes=[Eye::open(3.4);2];eyes[0].y=-0.5;eyes[1].y=0.5;look=[0.4,0.0];y=sway*0.35;},
+                    // 拿话筒/侧身唱：半睁眼（比缩略态大眼略收，带唱歌陶醉感）；侧身唱更眯一点，其余 pose 闭眼。
+                    MusicPose::Microphone=>{eyes=[Eye::open(2.8);2];},
+                    MusicPose::SideSing=>{eyes=[Eye::open(2.4);2];eyes[0].y=-0.5;eyes[1].y=0.5;look=[0.4,0.0];y=sway*0.35;},
                     MusicPose::HighNote=>{eyes=[Eye::arc(2.3,-0.7);2];eyes[0].tilt=-0.3;eyes[1].tilt=0.3;y=-1.5+sway*0.2;},
                     MusicPose::Hum=>{eyes=[Eye::arc(2.5,0.7);2];y=sway*0.3;},
                     MusicPose::Squint=>{eyes=[Eye::arc(1.6,0.0);2];y=sway*0.45;},

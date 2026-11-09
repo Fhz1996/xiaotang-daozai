@@ -358,10 +358,9 @@ impl Pet {
     ///    鼠标左右平移导致眼距忽宽忽窄、与嘴巴错位产生「侧面感」。
     /// 2. 眨眼只把高度往中间压缩（宽度不变，最后合成一条闭眼弧线），而不是整体等比缩放。
     fn draw_cute_eyes(&self, c: &Card, cx: f32, ink: Color32, pupil: Color32, eye_ratio: f32) {
-        // 开心：睁圆大眼、瞳孔居中；唱歌：睁眼 pose 用大眼（与缩略态一致）、眯眼 pose 闭成弧线；
-        // 清醒/担忧等保持对眼。
+        // 开心：睁圆大眼、瞳孔居中；唱歌睁眼 pose 用大眼（与缩略态完全一致，瞳孔也对眼下移）；
+        // 唱歌眯眼 pose 闭成弧线；清醒/担忧等保持对眼。
         let wide = matches!(self.state, PetState::Happy);
-        let sing = matches!(self.state, PetState::Music);
         // 萝卜大眼睛在基准上放大 50%（1.5 倍）；唱歌睁眼时也用同样的大眼，不再单独收成小扁眼。
         let eye_scale = 1.5;
         for (i, eye) in self.eyes.iter().enumerate() {
@@ -397,9 +396,9 @@ impl Pet {
                 let max_dy = wh - wh * 0.68;
                 let gx = self.gaze[0] * 0.22;
                 let gy = self.gaze[1] * 0.20;
-                // 开心/唱歌睁眼瞳孔居中；其余对眼。
-                let base_dx = if wide || sing { 0.0 } else if i == 0 { 0.30 * ww } else { -0.30 * ww };
-                let base_dy = if wide || sing { 0.0 } else { wh * 0.10 };
+                // 开心睁圆眼瞳孔居中；唱歌睁眼/清醒/担忧等都对眼 + 下移（与缩略态一致）。
+                let base_dx = if wide { 0.0 } else if i == 0 { 0.30 * ww } else { -0.30 * ww };
+                let base_dy = if wide { 0.0 } else { wh * 0.10 };
                 let dx = (base_dx + gx).clamp(-max_dx, max_dx);
                 let dy = (base_dy + gy).clamp(-max_dy, max_dy);
                 // 瞳孔也用不规则蛋形（eye_white 缩小版），与眼白同源，避免标准椭圆的呆板感。

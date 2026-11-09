@@ -66,8 +66,8 @@ mod tests {
             heights.push(head[1]);angles.push(angle);
         }
         let range=|values:Vec<f32>|values.iter().copied().fold(f32::NEG_INFINITY,f32::max)-values.iter().copied().fold(f32::INFINITY,f32::min);
-        assert!((0.6..1.1).contains(&range(heights)),"麦头应有细微起伏");
-        assert!((0.10..0.18).contains(&range(angles)),"麦柄应有轻微转动");
+        assert!((0.9..1.4).contains(&range(heights)),"麦头应有细微起伏");
+        assert!((0.16..0.24).contains(&range(angles)),"麦柄应有轻微转动");
     }
 }
 
@@ -80,7 +80,7 @@ fn music_pose_at(age:f32)->MusicPose {
 }
 
 fn microphone_pose(age:f32)->([f32;2],f32) {
-    ([5.9+(age*0.95).sin()*0.2,20.8+(age*1.35).sin()*0.45],35.0_f32.to_radians()+(age*1.1).sin()*0.07)
+    ([5.9+(age*0.95).sin()*0.4,20.8+(age*1.35).sin()*0.6],35.0_f32.to_radians()+(age*1.1).sin()*0.10)
 }
 
 fn microphone(c:&Card,cx:f32,y:f32,age:f32){
@@ -237,7 +237,7 @@ impl Pet {
         // 眨眼单独存成闭合程度（0..1），不再直接压 eye.height：这样萝卜大眼睛能
         // 只往中间压缩高度、保持宽度（真·闭眼），而不是把整个眼睛等比缩小。
         self.blink = 0.0;
-        if matches!(state, PetState::Awake | PetState::Curious | PetState::Focused | PetState::Worried) {
+        if matches!(state, PetState::Awake | PetState::Curious | PetState::Focused | PetState::Worried | PetState::Music) {
             let start = 2.0 + crate::anim::hash01((t / 5.6).floor() as u64) * 2.7;
             let blink = ((t % 5.6) as f32 - start) / 0.18;
             if (0.0..1.0).contains(&blink) {
@@ -425,10 +425,11 @@ impl Pet {
         ellipse(c, cx, y + 0.6, 2.5, 1.8, tongue);
     }
 
-    /// 唱歌嘴：圆形 O 嘴（发「啊/哦」音），与开心的大笑嘴区分。
+    /// 唱歌嘴：圆形 O 嘴随节奏开合（发长音时张圆、换气时收小），与开心的大笑嘴区分。
     fn draw_sing_mouth(&self, c: &Card, cx: f32, ink: Color32) {
         let y = 23.5 + self.y;
-        ellipse(c, cx, y, 2.3, 2.3, ink);
+        let open = (self.age * 3.6).sin() * 0.5 + 0.5;   // 0..1，随唱歌节奏开合
+        ellipse(c, cx, y, 2.1 + open * 0.5, 1.6 + open * 1.3, ink);
     }
 
     fn draw_music(&self,c:&Card,cx:f32,pose:MusicPose,ink:Color32){

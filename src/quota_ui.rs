@@ -516,7 +516,7 @@ mod tests {
     #[test] fn deepseek_badge_keeps_brand_blue_in_every_skin(){
         use crate::model::Skin;
         for skin in [Skin::Classic,Skin::Cream,Skin::GlassLight,Skin::GlassDark]{
-            let image=egui_extras::image::load_svg_bytes_with_size(deepseek_badge_svg(skin).as_bytes(),Some(egui::load::SizeHint::Size(100,100))).unwrap();
+            let image=egui_extras::image::load_svg_bytes_with_size(deepseek_badge_svg(&skin).as_bytes(),Some(egui::load::SizeHint::Size(100,100))).unwrap();
             assert!(image.pixels.iter().any(|p|*p==Color32::from_rgb(77,107,254)));
             let id=egui::TextureId::User(0xDEE5);crate::skin_paint::mark_monochrome(id);crate::skin_paint::mark_colored(id);
             let mut mesh=egui::Mesh::with_texture(id);mesh.add_rect_with_uv(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(24.0,24.0)),egui::Rect::from_min_max(egui::Pos2::ZERO,egui::pos2(1.0,1.0)),Color32::WHITE);

@@ -84,6 +84,34 @@ mod tests {
         assert!((0.9..1.4).contains(&range(heights)),"麦头应有细微起伏");
         assert!((0.16..0.24).contains(&range(angles)),"麦柄应有轻微转动");
     }
+    #[test]
+    fn singing_transition_is_soft_and_never_jumps_at_the_boundary() {
+        assert_eq!(smoother01(0.0),0.0);
+        assert_eq!(smoother01(1.0),1.0);
+        assert!((smoother01(0.5)-0.5).abs()<1e-6,"缓动应关于中点对称");
+        // 刚进唱歌时没有「上一个表情」，直接显示第一个。
+        assert_eq!(music_blend(0.0),(0,None,1.0));
+        // 边界前后：旧表情刚好收完、新表情从 0 开始，画面不会跳。
+        let (end_slot,_,end_t)=music_blend(MUSIC_FIRST+MUSIC_PERIOD-0.001);
+        let (start_slot,start_prev,start_t)=music_blend(MUSIC_FIRST+MUSIC_PERIOD+0.001);
+        assert!(end_t>0.999);
+        assert!(start_t<0.001);
+        assert_eq!(start_prev,Some(end_slot));
+        assert_eq!(start_slot,2);
+        // 0.8 秒后过渡完成；眼睛和嘴巴共用同一个进度，永远同步。
+        let (_,_,done)=music_blend(MUSIC_FIRST+MUSIC_FADE+0.001);
+        assert_eq!(done,1.0);
+    }
+    #[test]
+    fn singing_mouth_morph_is_a_single_continuous_shape() {
+        let a=mouth_shape(MusicPose::Microphone,3.0);
+        let b=mouth_shape(MusicPose::Hum,3.0);
+        assert_eq!(b.cap_r,[0.0,0.0],"小圆嘴没有球头");
+        let mid=lerp_mouth(a,b,0.5);
+        assert!((mid.cap_r[0]-0.525).abs()<1e-5,"球头半径连续收拢到一半");
+        assert_eq!(lerp_mouth(a,b,0.0).edge,a.edge);
+        assert_eq!(lerp_mouth(a,b,1.0).edge,b.edge);
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,8 +120,24 @@ pub(crate) enum MusicPose { Microphone, Hum, SideSing, Squint, HighNote, Smile }
 const MUSIC_PERIOD:f32=3.0;                        // 其余 5 个表情各 3 秒（快节奏轮转，突出动态效果）
 const MUSIC_FIRST:f32=3.0;                         // 第一个表情（拿话筒）3 秒：眼睛渐变完就换表情
 const MUSIC_CYCLE:f32=MUSIC_FIRST+5.0*MUSIC_PERIOD; // 3+15=18 秒一轮
-const MUSIC_FADE:f32=0.45;                         // 表情切换过渡时长：前后两个表情连续过渡，避免硬切闪动
+const MUSIC_FADE:f32=0.8;                          // 表情切换过渡时长：拉长到 0.8 秒，形变从容不「一闪而过」
 const MUSIC_POSES:[MusicPose;6]=[MusicPose::Microphone,MusicPose::Hum,MusicPose::SideSing,MusicPose::Squint,MusicPose::HighNote,MusicPose::Smile];
+
+/// 比 smoothstep 更柔：两端的一阶、二阶导数都是 0，起步和收尾都不会有「突然动起来」的顿感。
+fn smoother01(x:f32)->f32 {
+    let t=x.clamp(0.0,1.0);
+    t*t*t*(t*(t*6.0-15.0)+10.0)
+}
+
+/// 当前帧的唱歌表情混合：返回 (当前表情序号, 上一个表情序号, 混合进度 0..1)。
+/// 眼睛与嘴巴共用这一个进度，二者永远同步形变，不会出现「眼睛已经换完、嘴还在淡入」。
+fn music_blend(age:f32)->(usize,Option<usize>,f32) {
+    let (slot,elapsed)=music_slot(age);
+    // 刚进入唱歌时没有「上一个表情」，直接显示第一个。
+    if age<MUSIC_FIRST { return (slot,None,1.0); }
+    let prev=if slot==0 {5}else{slot-1};
+    (slot,Some(prev),smoother01(elapsed/MUSIC_FADE))
+}
 /// 返回 (当前是第几个表情 0..5, 该表情已持续的秒数)。
 fn music_slot(age:f32)->(usize,f32) {
     let t=age%MUSIC_CYCLE;
@@ -210,6 +254,126 @@ fn eye_white(c: &Card, cx: f32, cy: f32, rx: f32, ry: f32, color: Color32) {
     c.poly(&pts, color);
 }
 
+/// 不透明颜色插值：唱歌时眼睛由「白色蛋形」渐变成「墨色闭眼弧线」，
+/// 用颜色过渡而不是半透明叠加，避免中间帧发灰、像蒙了一层脏影。
+fn mix_color(a:Color32,b:Color32,t:f32)->Color32 {
+    let t=t.clamp(0.0,1.0);
+    let ch=|x:u8,y:u8|(x as f32+(y as f32-x as f32)*t).round() as u8;
+    Color32::from_rgb(ch(a.r(),b.r()),ch(a.g(),b.g()),ch(a.b(),b.b()))
+}
+
+/// 唱歌态的一只眼睛：白色蛋形 ↔ 墨色闭眼弧线之间做「形状渐变」。
+/// k=1 完全睁（定稿白眼+蓝瞳），k=0 完全闭（定稿黑弧线），中间用 20 段凸四边形
+/// 拼出一条逐渐变弯、变细、变深的带子——不是把椭圆等比压扁（那样会留下一根难看的细蓝线）。
+fn singing_eye(c:&Card,x:f32,y:f32,rw:f32,rh:f32,k:f32,curve:f32,
+               ink:Color32,pupil:Color32,side:f32,gaze:[f32;2]) {
+    const N:usize=20;
+    let arc_half=1.35f32;                 // 闭眼线宽 2.7 的一半（与定稿一致）
+    let col=mix_color(ink,Color32::WHITE,k);
+    let xw=lerp(rw*0.9,rw,k);            // 闭眼弧线半宽 rw*0.9，睁眼眼白半宽 rw
+    let band=|q:f32|->(f32,f32) {
+        let shell=(1.0-q*q).max(0.0).sqrt();
+        let bend=curve*(1.0-q*q)*(1.0-k);
+        (bend,lerp(arc_half,rh*shell,k))
+    };
+    for j in 0..N {
+        // 相邻段轻微重叠，避免拼接处出现一条条竖缝。
+        let q0=(-1.0+2.0*j as f32/N as f32-0.012).max(-1.0);
+        let q1=(-1.0+2.0*(j+1) as f32/N as f32+0.012).min(1.0);
+        let (b0,h0)=band(q0);let (b1,h1)=band(q1);
+        c.poly(&[(x+q0*xw,y+b0-h0),(x+q1*xw,y+b1-h1),
+                 (x+q1*xw,y+b1+h1),(x+q0*xw,y+b0+h0)],col);
+    }
+    if k<0.9 {
+        // 两端补圆头（只在接近闭眼时逐渐显露），与定稿 c.path 的圆头描边一致。
+        let r=arc_half*(1.0-k);
+        c.circle(x-xw,y,r,col);
+        c.circle(x+xw,y,r,col);
+    }
+    if k>0.02 {
+        // 瞳孔随闭眼同步缩小、颜色融入眼白，最后自然消失，不会留下细蓝条。
+        let ball=mix_color(col,pupil,k);
+        let pw=rw*0.62*k;let ph=rh*0.68*k;
+        let gx=gaze[0]*0.22*k;let gy=gaze[1]*0.20*k;
+        let base=side*0.30*rw*k;
+        let max_dx=(xw-pw).max(0.0);
+        let max_dy=(rh-ph).max(0.0);
+        let dx=(base+gx).clamp(-max_dx,max_dx);
+        let dy=(rh*0.10*k+gy).clamp(-max_dy,max_dy);
+        eye_white(c,x+dx,y+dy,pw,ph,ball);
+    }
+}
+
+/// 波浪嘴定稿形状：从参考图逐像素提取的上下两条边界（21 点），两端另有球状圆头。
+/// 三种唱歌嘴统一用 `MouthShape` 表达，切换时逐点插值 = 一张嘴连续变形，
+/// 不再把两张嘴半透明叠在一起（那样会出现「双嘴 / 灰影」的脏中间帧）。
+const WAVE_SX:f32=1.12; // 整体拉宽一点点
+const WAVE_TOP:[(f32,f32);21]=[
+    (-5.0,0.665),(-4.495,1.543),(-3.989,1.543),(-3.511,1.303),(-3.005,0.479),
+    (-2.5,0.426),(-1.995,0.638),(-1.489,0.878),(-1.011,1.037),(-0.505,1.064),
+    (0.0,0.984),(0.505,0.771),(1.011,0.452),(1.489,0.239),(1.995,0.133),
+    (2.5,0.106),(3.005,0.239),(3.511,0.771),(3.989,1.144),(4.495,1.223),(5.0,0.505),
+];
+const WAVE_BOT:[(f32,f32);21]=[
+    (-5.0,0.426),(-4.495,-0.505),(-3.989,-0.824),(-3.511,-1.09),(-3.005,-1.223),
+    (-2.5,-1.223),(-1.995,-1.09),(-1.489,-0.878),(-1.011,-0.718),(-0.505,-0.665),
+    (0.0,-0.771),(0.505,-0.957),(1.011,-1.17),(1.489,-1.356),(1.995,-1.463),
+    (2.5,-1.516),(3.005,-1.489),(3.511,-1.33),(3.989,-1.09),(4.495,-0.638),(5.0,0.213),
+];
+
+#[derive(Clone,Copy)]
+struct MouthShape {
+    /// 前 21 点=上边界(左→右)，后 21 点=下边界(左→右)；坐标是相对嘴中心的偏移。
+    edge:[(f32,f32);42],
+    cap:[(f32,f32);2],   // 两端球头圆心
+    cap_r:[f32;2],       // 两端球头半径（O 嘴/小嘴为 0，过渡时收缩消失）
+}
+
+/// 某个唱歌表情在当前时刻的嘴形（O 嘴/小嘴的开合脉冲在这里算；波浪嘴是定稿静态形状）。
+fn mouth_shape(pose:MusicPose,age:f32)->MouthShape {
+    let mut s=MouthShape{edge:[(0.0,0.0);42],cap:[(0.0,0.0);2],cap_r:[0.0;2]};
+    match pose {
+        MusicPose::Microphone=>{
+            for i in 0..21 {
+                let (tx,ty)=WAVE_TOP[i];let (bx,by)=WAVE_BOT[i];
+                s.edge[i]=(tx*WAVE_SX,-ty);
+                s.edge[21+i]=(bx*WAVE_SX,-by);
+            }
+            s.cap=[(-4.5*WAVE_SX,-0.52),(4.5*WAVE_SX,-0.29)];
+            s.cap_r=[1.05,1.05];
+        },
+        _=>{
+            let open=(age*3.6).sin()*0.5+0.5;
+            let (rx,ry)=if pose==MusicPose::SideSing {
+                (2.1+open*0.5,1.6+open*1.3)   // 侧身唱：唱歌 O 嘴
+            } else {
+                (1.1+open*0.35,0.7+open*0.55) // 闭眼四态：简单小嘴
+            };
+            for i in 0..21 {
+                let q=i as f32/20.0*2.0-1.0;
+                let h=ry*(1.0-q*q).max(0.0).sqrt();
+                s.edge[i]=(q*rx,-h);
+                s.edge[21+i]=(q*rx,h);
+            }
+            s.cap=[(-rx,0.0),(rx,0.0)];
+        },
+    }
+    s
+}
+
+/// 两张嘴逐点插值：波浪的每条边、两端的球头半径都连续收放，中间始终只有「一张实心嘴」。
+fn lerp_mouth(a:MouthShape,b:MouthShape,t:f32)->MouthShape {
+    let mut s=a;
+    for i in 0..42 {
+        s.edge[i]=(lerp(a.edge[i].0,b.edge[i].0,t),lerp(a.edge[i].1,b.edge[i].1,t));
+    }
+    for i in 0..2 {
+        s.cap[i]=(lerp(a.cap[i].0,b.cap[i].0,t),lerp(a.cap[i].1,b.cap[i].1,t));
+        s.cap_r[i]=lerp(a.cap_r[i],b.cap_r[i],t);
+    }
+    s
+}
+
 #[derive(Clone, Copy)]
 struct Eye {
     height: f32,
@@ -298,12 +462,9 @@ impl Pet {
                 let sway=(age*1.4).sin();
                 // 切换后的 MUSIC_FADE 秒内，把「上一个表情」连续过渡到「当前表情」：
                 // 眼睛逐字段插值（睁眼蛋形 ↔ 闭眼弧线）、视线与身体同步插值，避免硬切闪动。
-                let (slot,elapsed)=music_slot(age);
+                let (slot,prev,blend)=music_blend(age);
                 let (mut cur_eyes,look_goal,y_goal)=music_face(MUSIC_POSES[slot],age,sway);
-                let has_prev=age>=MUSIC_FIRST;
-                let blend=if has_prev {smoothstep(0.0,MUSIC_FADE,elapsed)}else{1.0};
-                if has_prev && blend<1.0 {
-                    let prev=if slot==0 {5}else{slot-1};
+                if let Some(prev)=prev.filter(|_| blend<1.0) {
                     let (prev_eyes,prev_look,prev_y)=music_face(MUSIC_POSES[prev],age,sway);
                     for i in 0..2 { cur_eyes[i]=lerp_eye(prev_eyes[i],cur_eyes[i],blend); }
                     look=[lerp(prev_look[0],look_goal[0],blend),lerp(prev_look[1],look_goal[1],blend)];
@@ -370,23 +531,16 @@ impl Pet {
             PetState::Music => {
                 if cute_mouth {
                     // 萝卜式唱歌嘴巴：拿话筒=波浪嘴 / 侧身唱=唱歌 O 嘴 / 闭眼四态=简单小嘴。
-                    // 切换时前后两种嘴形交叉淡化（叠化），眼睛由 step 里的参数插值连续变形，
-                    // 话筒始终完整绘制（不淡化，避免忽隐忽现）。
-                    let (slot,elapsed)=music_slot(self.age);
-                    let has_prev=self.age>=MUSIC_FIRST;
-                    let blend=if has_prev {smoothstep(0.0,MUSIC_FADE,elapsed)}else{1.0};
-                    if has_prev && blend<1.0 {
-                        let prev=if slot==0 {5}else{slot-1};
-                        self.draw_music_mouth(&c.faded(1.0-blend),cx,MUSIC_POSES[prev],ink);
-                    }
-                    self.draw_music_mouth(&c.faded(blend),cx,MUSIC_POSES[slot],ink);
+                    // 切换时只画「一张嘴」——前后两种嘴形逐点插值成中间形状（波浪慢慢收拢成 O 嘴），
+                    // 不再把两个嘴半透明叠在一起（那样会出现双嘴、灰影，看着又脏又跳）。
+                    // 眼睛由 step 里的参数插值连续变形，话筒始终完整绘制（不淡化，避免忽隐忽现）。
+                    let (slot,prev,blend)=music_blend(self.age);
+                    self.draw_music_mouth(c,cx,prev.map(|p|MUSIC_POSES[p]),MUSIC_POSES[slot],blend,ink);
                     microphone_radish(c, cx, self.y + self.gaze[1], self.age);
                 } else {
-                    // 交叉淡入按「当前表情已持续时间」计算，跟随新节奏（第一个 3 秒、其余各 3 秒）。
-                    let (slot,elapsed)=music_slot(self.age);
-                    let alpha=smoothstep(0.0,MUSIC_FADE,elapsed);
-                    if self.age>=MUSIC_FIRST && alpha<1.0 {
-                        let prev=if slot==0 {5}else{slot-1};
+                    // 原版皮肤沿用叠加淡入，但进度与萝卜皮肤共用同一个 music_blend，保持节奏一致。
+                    let (slot,prev,alpha)=music_blend(self.age);
+                    if let Some(prev)=prev.filter(|_| alpha<1.0) {
                         self.draw_music(&c.faded(1.0-alpha),cx,MUSIC_POSES[prev],ink);
                     }
                     self.draw_music(&c.faded(alpha),cx,MUSIC_POSES[slot],ink);
@@ -459,29 +613,18 @@ impl Pet {
                 let t = ((eye.height - 2.5) / 1.9).clamp(0.0, 1.0);
                 let rw = 2.875 + t * (full_w - 2.875);
                 let rh_full = if eye.height >= 2.5 { 2.5 + t * (full_h - 2.5) } else { eye.height };
-                let rh = rh_full * open;
-                if rh < 0.14 {
-                    // 闭眼弧线的弯向也连续插值：睁眼 pose 的眨眼向下弯(0.65)，闭眼 pose
-                    // 按 eye.curve（上弯笑眼 / 下弯哼），避免切换瞬间弯向突变。
-                    let close_k = smoothstep(0.0, 0.8, eye.height);
-                    let curve = lerp(eye.curve * eye_scale, 0.65 * eye_scale, close_k);
-                    let pts: Vec<_> = (0..=12).map(|n| {
-                        let q = n as f32 / 6.0 - 1.0;
-                        (x + q * rw * 0.9, y + (1.0 - q * q) * curve)
-                    }).collect();
-                    c.path(&pts, 1.8 * eye_scale, ink);
-                } else {
-                    eye_white(c, x, y, rw, rh, Color32::WHITE);
-                    // 瞳孔对眼下移（左眼贴右、右眼贴左），clamp 不出眼白。
-                    let max_dx = rw - rw * 0.62;
-                    let max_dy = rh - rh * 0.68;
-                    let gx = self.gaze[0] * 0.22;
-                    let gy = self.gaze[1] * 0.20;
-                    let base_dx = if i == 0 { 0.30 * rw } else { -0.30 * rw };
-                    let dx = (base_dx + gx).clamp(-max_dx, max_dx);
-                    let dy = (rh * 0.10 + gy).clamp(-max_dy, max_dy);
-                    eye_white(c, x + dx, y + dy, rw * 0.62, rh * 0.68, pupil);
-                }
+                let rh = rh_full;
+                // 「睁眼程度」由 eye.height 连续决定：闭眼 pose=0、微微睁=1；眨眼也走同一条
+                // 渐变通道（睁→闭→睁），不再用 rh<0.14 的阈值硬切。
+                // 整只眼睛做形状渐变（白色蛋形 → 墨色弯弧），不会在半路留下
+                // 「细蓝线 → 突然一根黑弧线」这种生硬的中间帧。
+                let open_k = smoothstep(0.15, 1.25, eye.height) * open;
+                // 闭眼弧线的弯向也连续插值：睁眼 pose 的眨眼向下弯(0.65)，闭眼 pose
+                // 按 eye.curve（上弯笑眼 / 下弯哼），避免切换瞬间弯向突变。
+                let close_k = smoothstep(0.0, 0.8, eye.height);
+                let curve = lerp(eye.curve * eye_scale, 0.65 * eye_scale, close_k);
+                singing_eye(c,x,y,rw,rh,open_k,curve,ink,pupil,
+                            if i==0 {1.0}else{-1.0},self.gaze);
                 continue;
             }
             // 非唱歌：睁眼（开心/清醒大眼）；闭眼/眯眼（eye.height<=1.2）走弧线。
@@ -531,31 +674,21 @@ impl Pet {
         }
     }
 
-    /// 波浪嘴：从参考图逐像素提取的「实心粗条」形状（上下两条边界围成的波浪，两端球状膨大），
-    /// 等比例缩放（x/y 同 scale），忠实还原参考图。上边界左→右 + 下边界右→左拼成闭合多边形填充，
-    /// 两端各补一个圆球头。
+    /// 波浪嘴（也是缩略态默认嘴）：按定稿顶点画成一条实心粗波浪，两端补球头。
     fn draw_wave_mouth(&self, c: &Card, cx: f32, ink: Color32) {
-        let y = 23.5 + self.y;
-        let sx = 1.12; // 整体拉宽一点点
-        let top: [(f32, f32); 21] = [
-            (-5.0, 0.665), (-4.495, 1.543), (-3.989, 1.543), (-3.511, 1.303), (-3.005, 0.479),
-            (-2.5, 0.426), (-1.995, 0.638), (-1.489, 0.878), (-1.011, 1.037), (-0.505, 1.064),
-            (0.0, 0.984), (0.505, 0.771), (1.011, 0.452), (1.489, 0.239), (1.995, 0.133),
-            (2.5, 0.106), (3.005, 0.239), (3.511, 0.771), (3.989, 1.144), (4.495, 1.223), (5.0, 0.505),
-        ];
-        let bot: [(f32, f32); 21] = [
-            (-5.0, 0.426), (-4.495, -0.505), (-3.989, -0.824), (-3.511, -1.09), (-3.005, -1.223),
-            (-2.5, -1.223), (-1.995, -1.09), (-1.489, -0.878), (-1.011, -0.718), (-0.505, -0.665),
-            (0.0, -0.771), (0.505, -0.957), (1.011, -1.17), (1.489, -1.356), (1.995, -1.463),
-            (2.5, -1.516), (3.005, -1.489), (3.511, -1.33), (3.989, -1.09), (4.495, -0.638), (5.0, 0.213),
-        ];
-        let mut pts: Vec<(f32, f32)> = Vec::with_capacity(42);
-        for (dx, dy) in top.iter() { pts.push((cx + dx * sx, y - dy)); }
-        for (dx, dy) in bot.iter().rev() { pts.push((cx + dx * sx, y - dy)); }
-        c.poly(&pts, ink);
-        // 两端球头：参考图两端是「球状膨大」的圆头，直径约等于嘴巴最粗处。
-        c.circle(cx - 4.5 * sx, y - 0.52, 1.05, ink);
-        c.circle(cx + 4.5 * sx, y - 0.29, 1.05, ink);
+        self.draw_mouth_shape(c,cx,mouth_shape(MusicPose::Microphone,self.age),ink);
+    }
+
+    /// 把一张嘴形画出来：上边界左→右 + 下边界右→左围成闭合多边形，端点半径 >0 才补球头。
+    fn draw_mouth_shape(&self,c:&Card,cx:f32,s:MouthShape,ink:Color32) {
+        let y=23.5+self.y;
+        let mut pts:Vec<(f32,f32)>=Vec::with_capacity(42);
+        for i in 0..21 { pts.push((cx+s.edge[i].0,y+s.edge[i].1)); }
+        for i in (0..21).rev() { pts.push((cx+s.edge[21+i].0,y+s.edge[21+i].1)); }
+        c.poly(&pts,ink);
+        for k in 0..2 {
+            if s.cap_r[k]>0.02 { c.circle(cx+s.cap[k].0,y+s.cap[k].1,s.cap_r[k],ink); }
+        }
     }
 
     /// 开心张嘴：黑色开口 + 下方舌头。
@@ -567,28 +700,17 @@ impl Pet {
         ellipse(c, cx, y + 0.6, 2.5, 1.8, tongue);
     }
 
-    /// 唱歌嘴（侧身唱用）：圆形 O 嘴随节奏开合（发长音时张圆、换气时收小），像投入地唱歌。
-    fn draw_sing_mouth(&self, c: &Card, cx: f32, ink: Color32) {
-        let y = 23.5 + self.y;
-        let open = (self.age * 3.6).sin() * 0.5 + 0.5;   // 0..1，随唱歌节奏开合
-        ellipse(c, cx, y, 2.1 + open * 0.5, 1.6 + open * 1.3, ink);
-    }
-
-    /// 闭眼（哼/眯/高音/微笑）时的简单小嘴：小巧的 O 嘴随节奏轻微开合，
-    /// 比唱歌张嘴小得多，闭眼时嘴巴"简单一点"、不抢戏。
-    fn draw_small_mouth(&self, c: &Card, cx: f32, ink: Color32) {
-        let y = 23.5 + self.y;
-        let open = (self.age * 3.6).sin() * 0.5 + 0.5;   // 0..1，随唱歌节奏轻微开合
-        ellipse(c, cx, y, 1.1 + open * 0.35, 0.7 + open * 0.55, ink);
-    }
-
-    /// 萝卜唱歌嘴按 pose 分发；切换过渡时前后两种嘴形用交叉淡化衔接，避免硬切闪动。
-    fn draw_music_mouth(&self,c:&Card,cx:f32,pose:MusicPose,ink:Color32) {
-        match pose {
-            MusicPose::Microphone => self.draw_wave_mouth(c,cx,ink),
-            MusicPose::SideSing  => self.draw_sing_mouth(c,cx,ink),
-            _                    => self.draw_small_mouth(c,cx,ink),
-        }
+    /// 萝卜唱歌嘴：拿话筒=波浪嘴 / 侧身唱=O 嘴 / 闭眼四态=小嘴。
+    /// 切换时把前后两张嘴逐点插值成「中间的一张嘴」再画，全程只有一个实心形状：
+    /// 波浪的起伏、宽度、两端球头一起连续收放成小圆嘴，不会叠出双嘴或灰影。
+    fn draw_music_mouth(&self,c:&Card,cx:f32,from:Option<MusicPose>,to:MusicPose,blend:f32,ink:Color32) {
+        let s=match from {
+            Some(from) if from!=to && blend<1.0 => {
+                lerp_mouth(mouth_shape(from,self.age),mouth_shape(to,self.age),blend)
+            },
+            _ => mouth_shape(to,self.age),
+        };
+        self.draw_mouth_shape(c,cx,s,ink);
     }
 
     fn draw_music(&self,c:&Card,cx:f32,pose:MusicPose,ink:Color32){

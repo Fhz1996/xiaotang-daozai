@@ -231,8 +231,13 @@ impl Pet {
                 let sway=(age*1.4).sin();
                 look=[0.0,0.0];y=-0.5+sway*0.25;
                 match self.music_pose() {
-                    // 拿话筒/侧身唱：微微睁眼（横向压扁蛋形，定稿半高 2.5/2.0，不放大）；其余 pose 闭眼。
-                    MusicPose::Microphone=>{eyes=[Eye::open(2.5);2];},
+                    // 拿话筒唱：眼睛从缩略态全睁(4.4)随时间渐变到微微睁(2.5)，唱得越久越陶醉。
+                    // 侧身唱：更眯的微微睁(2.0)；其余 pose 闭眼。
+                    MusicPose::Microphone=>{
+                        let prog=((age%MUSIC_PERIOD)/MUSIC_PERIOD).clamp(0.0,1.0);
+                        let h=4.4+(2.5-4.4)*prog;
+                        eyes=[Eye::open(h);2];
+                    },
                     MusicPose::SideSing=>{eyes=[Eye::open(2.0);2];eyes[0].y=-0.5;eyes[1].y=0.5;look=[0.4,0.0];y=sway*0.35;},
                     MusicPose::HighNote=>{eyes=[Eye::arc(2.3,-0.7);2];eyes[0].tilt=-0.3;eyes[1].tilt=0.3;y=-1.5+sway*0.2;},
                     MusicPose::Hum=>{eyes=[Eye::arc(2.5,0.7);2];y=sway*0.3;},
@@ -368,11 +373,16 @@ impl Pet {
             // 眼白固定位置：只随宠物整体 y 浮动，不随 gaze 平移。
             let x = cx + if i == 0 { -4.7 } else { 4.7 };
             let y = 14.5 + self.y + eye.y;
-            // 唱歌态：眼睛整体独立绘制，宽度固定 2.875（横向压扁基准，不放大）。
+            // 唱歌态：眼睛尺寸随 eye.height 平滑过渡，让「拿话筒唱」从缩略态大眼自然渐变到微微睁，
+            // 避免进入唱歌瞬间宽度跳变。eye.height 4.4=缩略态大眼、2.5=微微睁、更小=更眯。
             if in_music {
-                let rw = 2.875;
                 let open = (1.0 - self.blink).clamp(0.0, 1.0);
-                let rh = eye.height * open;
+                let full_h = 4.4 * 0.72 * eye_scale;      // 缩略态满睁高度（4.752）
+                let full_w = full_h * eye_ratio;          // 缩略态满睁宽度（3.469）
+                let t = ((eye.height - 2.5) / 1.9).clamp(0.0, 1.0);
+                let rw = 2.875 + t * (full_w - 2.875);
+                let rh_full = if eye.height >= 2.5 { 2.5 + t * (full_h - 2.5) } else { eye.height };
+                let rh = rh_full * open;
                 if rh < 0.14 {
                     // 眨眼（睁眼 pose 短暂闭合）向下弯；表情闭眼（闭眼 pose）按 curve 弯向。
                     let curve = if eye.height < 0.14 { eye.curve * eye_scale } else { 0.65 * eye_scale };

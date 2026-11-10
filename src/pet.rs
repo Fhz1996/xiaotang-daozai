@@ -92,7 +92,7 @@ pub(crate) enum MusicPose { Microphone, Hum, SideSing, Squint, HighNote, Smile }
 const MUSIC_PERIOD:f32=3.0;                        // 其余 5 个表情各 3 秒（快节奏轮转，突出动态效果）
 const MUSIC_FIRST:f32=3.0;                         // 第一个表情（拿话筒）3 秒：眼睛渐变完就换表情
 const MUSIC_CYCLE:f32=MUSIC_FIRST+5.0*MUSIC_PERIOD; // 3+15=18 秒一轮
-const MUSIC_FADE:f32=0.25;                         // 表情切换交叉淡入时长（短，避免 3 秒的表情被淡化糊掉）
+const MUSIC_FADE:f32=0.45;                         // 表情切换过渡时长：前后两个表情连续过渡，避免硬切闪动
 const MUSIC_POSES:[MusicPose;6]=[MusicPose::Microphone,MusicPose::Hum,MusicPose::SideSing,MusicPose::Squint,MusicPose::HighNote,MusicPose::Smile];
 /// 返回 (当前是第几个表情 0..5, 该表情已持续的秒数)。
 fn music_slot(age:f32)->(usize,f32) {
@@ -104,6 +104,46 @@ fn music_slot(age:f32)->(usize,f32) {
 }
 fn music_pose_at(age:f32)->MusicPose {
     MUSIC_POSES[music_slot(age).0]
+}
+
+/// 某个唱歌表情的「脸部目标参数」（眼睛 / 视线 / 身体 y）。抽成纯函数，切换时才能同时算出
+/// 前后两个表情、在两者之间连续插值，而不是一帧内硬切。
+fn music_face(pose:MusicPose, age:f32, sway:f32)->([Eye;2],[f32;2],f32) {
+    let mut look=[0.0;2];
+    let mut y=-0.5+sway*0.25;
+    let eyes=match pose {
+        MusicPose::Microphone=>{
+            // 拿话筒：眼睛从缩略态全睁(4.4)在本表情的 3 秒内渐变到微微睁(2.5)。
+            let prog=((age%MUSIC_CYCLE)/MUSIC_FIRST).clamp(0.0,1.0);
+            [Eye::open(4.4+(2.5-4.4)*prog);2]
+        },
+        MusicPose::SideSing=>{
+            let mut e=[Eye::open(2.0);2];e[0].y=-0.5;e[1].y=0.5;
+            look=[0.4,0.0];y=sway*0.35;e
+        },
+        MusicPose::HighNote=>{
+            let mut e=[Eye::arc(2.3,-0.7);2];e[0].tilt=-0.3;e[1].tilt=0.3;
+            y=-1.5+sway*0.2;e
+        },
+        MusicPose::Hum=>{y=sway*0.3;[Eye::arc(2.5,0.7);2]},
+        MusicPose::Squint=>{y=sway*0.45;[Eye::arc(1.6,0.0);2]},
+        MusicPose::Smile=>{
+            let mut e=[Eye::arc(2.3,-0.8);2];e[0].y=-0.5;e[1].y=0.5;
+            look=[sway*0.5,0.0];e
+        },
+    };
+    (eyes,look,y)
+}
+
+/// 两颗眼睛逐字段插值：睁眼蛋形 ↔ 闭眼弧线的弯向/张开度都能连续变化，不出现形状跳变。
+fn lerp_eye(a:Eye,b:Eye,t:f32)->Eye {
+    Eye {
+        height: lerp(a.height,b.height,t),
+        spread: lerp(a.spread,b.spread,t),
+        curve:  lerp(a.curve, b.curve, t),
+        y:      lerp(a.y,     b.y,     t),
+        tilt:   lerp(a.tilt,  b.tilt,  t),
+    }
 }
 
 fn microphone_pose(age:f32)->([f32;2],f32) {
@@ -256,22 +296,22 @@ impl Pet {
             },
             PetState::Music => {
                 let sway=(age*1.4).sin();
-                look=[0.0,0.0];y=-0.5+sway*0.25;
-                match self.music_pose() {
-                    // 拿话筒唱（第一个表情）：整个表情只有 3 秒，眼睛从缩略态全睁(4.4)
-                    // 在这 3 秒内渐变到微微睁(2.5)，变完立刻切到其余表情，没有停留段。
-                    // 侧身唱：更眯的微微睁(2.0)；其余 pose 闭眼。
-                    MusicPose::Microphone=>{
-                        let prog=((age%MUSIC_CYCLE)/MUSIC_FIRST).clamp(0.0,1.0);
-                        let h=4.4+(2.5-4.4)*prog;
-                        eyes=[Eye::open(h);2];
-                    },
-                    MusicPose::SideSing=>{eyes=[Eye::open(2.0);2];eyes[0].y=-0.5;eyes[1].y=0.5;look=[0.4,0.0];y=sway*0.35;},
-                    MusicPose::HighNote=>{eyes=[Eye::arc(2.3,-0.7);2];eyes[0].tilt=-0.3;eyes[1].tilt=0.3;y=-1.5+sway*0.2;},
-                    MusicPose::Hum=>{eyes=[Eye::arc(2.5,0.7);2];y=sway*0.3;},
-                    MusicPose::Squint=>{eyes=[Eye::arc(1.6,0.0);2];y=sway*0.45;},
-                    MusicPose::Smile=>{eyes=[Eye::arc(2.3,-0.8);2];eyes[0].y=-0.5;eyes[1].y=0.5;look=[sway*0.5,0.0];},
+                // 切换后的 MUSIC_FADE 秒内，把「上一个表情」连续过渡到「当前表情」：
+                // 眼睛逐字段插值（睁眼蛋形 ↔ 闭眼弧线）、视线与身体同步插值，避免硬切闪动。
+                let (slot,elapsed)=music_slot(age);
+                let (mut cur_eyes,look_goal,y_goal)=music_face(MUSIC_POSES[slot],age,sway);
+                let has_prev=age>=MUSIC_FIRST;
+                let blend=if has_prev {smoothstep(0.0,MUSIC_FADE,elapsed)}else{1.0};
+                if has_prev && blend<1.0 {
+                    let prev=if slot==0 {5}else{slot-1};
+                    let (prev_eyes,prev_look,prev_y)=music_face(MUSIC_POSES[prev],age,sway);
+                    for i in 0..2 { cur_eyes[i]=lerp_eye(prev_eyes[i],cur_eyes[i],blend); }
+                    look=[lerp(prev_look[0],look_goal[0],blend),lerp(prev_look[1],look_goal[1],blend)];
+                    y=lerp(prev_y,y_goal,blend);
+                } else {
+                    look=look_goal;y=y_goal;
                 }
+                eyes=cur_eyes;
             },
             PetState::Worried => {
                 eyes[0] = Eye { spread: -0.6, tilt: -0.7, y: 0.4, ..Eye::open(2.8) };
@@ -329,15 +369,17 @@ impl Pet {
             PetState::Satisfied => crate::paint::droplet(c,cx+18.0,12.0,5.0,theme::CYAN),
             PetState::Music => {
                 if cute_mouth {
-                    // 萝卜式唱歌嘴巴：
-                    // - 拿话筒（微微睁）：缩略态波浪嘴（正常唱，脸接近缩略态）。
-                    // - 侧身唱（更眯）：唱歌 O 嘴开合——嘴巴张开、像在投入地唱歌。
-                    // - 闭眼 pose（哼/眯/高音/微笑）：简单的一点小嘴（小巧 O 嘴轻微开合）。
-                    match self.music_pose() {
-                        MusicPose::Microphone => self.draw_wave_mouth(c, cx, ink),
-                        MusicPose::SideSing => self.draw_sing_mouth(c, cx, ink),
-                        _ => self.draw_small_mouth(c, cx, ink),
+                    // 萝卜式唱歌嘴巴：拿话筒=波浪嘴 / 侧身唱=唱歌 O 嘴 / 闭眼四态=简单小嘴。
+                    // 切换时前后两种嘴形交叉淡化（叠化），眼睛由 step 里的参数插值连续变形，
+                    // 话筒始终完整绘制（不淡化，避免忽隐忽现）。
+                    let (slot,elapsed)=music_slot(self.age);
+                    let has_prev=self.age>=MUSIC_FIRST;
+                    let blend=if has_prev {smoothstep(0.0,MUSIC_FADE,elapsed)}else{1.0};
+                    if has_prev && blend<1.0 {
+                        let prev=if slot==0 {5}else{slot-1};
+                        self.draw_music_mouth(&c.faded(1.0-blend),cx,MUSIC_POSES[prev],ink);
                     }
+                    self.draw_music_mouth(&c.faded(blend),cx,MUSIC_POSES[slot],ink);
                     microphone_radish(c, cx, self.y + self.gaze[1], self.age);
                 } else {
                     // 交叉淡入按「当前表情已持续时间」计算，跟随新节奏（第一个 3 秒、其余各 3 秒）。
@@ -406,26 +448,23 @@ impl Pet {
             // 眼白固定位置：只随宠物整体 y 浮动，不随 gaze 平移。
             let x = cx + if i == 0 { -4.7 } else { 4.7 };
             let y = 14.5 + self.y + eye.y;
-            // 唱歌态：只有第一个表情（拿话筒）「从缩略态眼睛开始」——尺寸随 eye.height 从
-            // 缩略态(4.4 → 3.469×4.752 竖椭圆)平滑插值到微微睁(2.5 → 2.875×2.5 横扁蛋形)。
-            // 其余 5 个表情不走这套插值，直接用定稿尺寸（宽度固定 2.875），不参与缩略态渐变。
+            // 唱歌态：眼睛尺寸只由 eye.height 连续决定，不再用「是否第一个表情」的布尔开关。
+            // 切换过渡时 eye.height 是前后两个表情插值出来的，宽/高自然连续，不会硬切跳变。
+            // 定稿值：4.4→3.469×4.752 缩略态大眼 / 2.5→2.875×2.5 微微睁 /
+            // 2.0→2.875×2.0 侧身唱 / 0→闭眼弧线（t=0 时插值结果与原定稿完全一致）。
             if in_music {
                 let open = (1.0 - self.blink).clamp(0.0, 1.0);
-                let first = matches!(self.music_pose(), MusicPose::Microphone);
-                let (rw, rh_full) = if first {
-                    let full_h = 4.4 * 0.72 * eye_scale;  // 缩略态满睁高度（4.752）
-                    let full_w = full_h * eye_ratio;      // 缩略态满睁宽度（3.469）
-                    let t = ((eye.height - 2.5) / 1.9).clamp(0.0, 1.0);
-                    let rw = 2.875 + t * (full_w - 2.875);
-                    let rh_full = if eye.height >= 2.5 { 2.5 + t * (full_h - 2.5) } else { eye.height };
-                    (rw, rh_full)
-                } else {
-                    (2.875_f32, eye.height)               // 定稿固定尺寸：不从缩略态开始
-                };
+                let full_h = 4.4 * 0.72 * eye_scale;   // 缩略态满睁高度（4.752）
+                let full_w = full_h * eye_ratio;       // 缩略态满睁宽度（3.469）
+                let t = ((eye.height - 2.5) / 1.9).clamp(0.0, 1.0);
+                let rw = 2.875 + t * (full_w - 2.875);
+                let rh_full = if eye.height >= 2.5 { 2.5 + t * (full_h - 2.5) } else { eye.height };
                 let rh = rh_full * open;
                 if rh < 0.14 {
-                    // 眨眼（睁眼 pose 短暂闭合）向下弯；表情闭眼（闭眼 pose）按 curve 弯向。
-                    let curve = if eye.height < 0.14 { eye.curve * eye_scale } else { 0.65 * eye_scale };
+                    // 闭眼弧线的弯向也连续插值：睁眼 pose 的眨眼向下弯(0.65)，闭眼 pose
+                    // 按 eye.curve（上弯笑眼 / 下弯哼），避免切换瞬间弯向突变。
+                    let close_k = smoothstep(0.0, 0.8, eye.height);
+                    let curve = lerp(eye.curve * eye_scale, 0.65 * eye_scale, close_k);
                     let pts: Vec<_> = (0..=12).map(|n| {
                         let q = n as f32 / 6.0 - 1.0;
                         (x + q * rw * 0.9, y + (1.0 - q * q) * curve)
@@ -541,6 +580,15 @@ impl Pet {
         let y = 23.5 + self.y;
         let open = (self.age * 3.6).sin() * 0.5 + 0.5;   // 0..1，随唱歌节奏轻微开合
         ellipse(c, cx, y, 1.1 + open * 0.35, 0.7 + open * 0.55, ink);
+    }
+
+    /// 萝卜唱歌嘴按 pose 分发；切换过渡时前后两种嘴形用交叉淡化衔接，避免硬切闪动。
+    fn draw_music_mouth(&self,c:&Card,cx:f32,pose:MusicPose,ink:Color32) {
+        match pose {
+            MusicPose::Microphone => self.draw_wave_mouth(c,cx,ink),
+            MusicPose::SideSing  => self.draw_sing_mouth(c,cx,ink),
+            _                    => self.draw_small_mouth(c,cx,ink),
+        }
     }
 
     fn draw_music(&self,c:&Card,cx:f32,pose:MusicPose,ink:Color32){

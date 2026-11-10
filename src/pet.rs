@@ -376,23 +376,23 @@ impl Pet {
             // 眼白固定位置：只随宠物整体 y 浮动，不随 gaze 平移。
             let x = cx + if i == 0 { -4.7 } else { 4.7 };
             let y = 14.5 + self.y + eye.y;
-        // 唱歌态：只有第一个表情（拿话筒）「从缩略态眼睛开始」——尺寸随 eye.height 从
-        // 缩略态(4.4 → 3.469×4.752 竖椭圆)平滑插值到微微睁(2.5 → 2.875×2.5 横扁蛋形)。
-        // 其余 5 个表情不走这套插值，直接用定稿尺寸（宽度固定 2.875），不参与缩略态渐变。
-        if in_music {
-            let open = (1.0 - self.blink).clamp(0.0, 1.0);
-            let first = matches!(self.music_pose(), MusicPose::Microphone);
-            let (rw, rh_full) = if first {
-                let full_h = 4.4 * 0.72 * eye_scale;  // 缩略态满睁高度（4.752）
-                let full_w = full_h * eye_ratio;      // 缩略态满睁宽度（3.469）
-                let t = ((eye.height - 2.5) / 1.9).clamp(0.0, 1.0);
-                let rw = 2.875 + t * (full_w - 2.875);
-                let rh_full = if eye.height >= 2.5 { 2.5 + t * (full_h - 2.5) } else { eye.height };
-                (rw, rh_full)
-            } else {
-                (2.875_f32, eye.height)               // 定稿固定尺寸：不从缩略态开始
-            };
-            let rh = rh_full * open;
+            // 唱歌态：只有第一个表情（拿话筒）「从缩略态眼睛开始」——尺寸随 eye.height 从
+            // 缩略态(4.4 → 3.469×4.752 竖椭圆)平滑插值到微微睁(2.5 → 2.875×2.5 横扁蛋形)。
+            // 其余 5 个表情不走这套插值，直接用定稿尺寸（宽度固定 2.875），不参与缩略态渐变。
+            if in_music {
+                let open = (1.0 - self.blink).clamp(0.0, 1.0);
+                let first = matches!(self.music_pose(), MusicPose::Microphone);
+                let (rw, rh_full) = if first {
+                    let full_h = 4.4 * 0.72 * eye_scale;  // 缩略态满睁高度（4.752）
+                    let full_w = full_h * eye_ratio;      // 缩略态满睁宽度（3.469）
+                    let t = ((eye.height - 2.5) / 1.9).clamp(0.0, 1.0);
+                    let rw = 2.875 + t * (full_w - 2.875);
+                    let rh_full = if eye.height >= 2.5 { 2.5 + t * (full_h - 2.5) } else { eye.height };
+                    (rw, rh_full)
+                } else {
+                    (2.875_f32, eye.height)               // 定稿固定尺寸：不从缩略态开始
+                };
+                let rh = rh_full * open;
                 if rh < 0.14 {
                     // 眨眼（睁眼 pose 短暂闭合）向下弯；表情闭眼（闭眼 pose）按 curve 弯向。
                     let curve = if eye.height < 0.14 { eye.curve * eye_scale } else { 0.65 * eye_scale };

@@ -23,23 +23,34 @@ pub(crate) enum PetState {
 mod tests {
     use super::*;
     #[test]
-    fn singing_keeps_each_expression_for_fifteen_seconds_after_the_transition() {
+    fn singing_first_expression_lasts_three_seconds_then_the_rest_rotate() {
         let mut pet=Pet::default();
         pet.step(PetState::Music,0.0,0.0,[0.0;2],true);
-        let pose=pet.music_pose();
-        for frame in 1..960 {
+        assert_eq!(pet.music_pose(),MusicPose::Microphone);
+        // 第一个表情只有 3 秒：到 2.8 秒的每一帧都还是拿话筒。
+        for frame in 1..170 {
             pet.step(PetState::Music,frame as f64/60.0,1.0/60.0,[0.0;2],true);
-            assert_eq!(pet.music_pose(),pose,"一秒过渡和十五秒停留期间不能频繁换表情");
+            assert_eq!(pet.music_pose(),MusicPose::Microphone,"第一个表情应持续到 3 秒");
         }
-        pet.step(PetState::Music,16.1,0.2,[0.0;2],true);
-        assert_ne!(pet.music_pose(),pose);
+        // 到 3.2 秒已经切成下一个表情，不再有停留段。
+        for frame in 170..192 {
+            pet.step(PetState::Music,frame as f64/60.0,1.0/60.0,[0.0;2],true);
+        }
+        let pose=pet.music_pose();
+        assert_ne!(pose,MusicPose::Microphone,"3 秒后应接着变其余表情");
+        // 其余表情各自稳定停留 15 秒。
+        for frame in 192..1092 {
+            pet.step(PetState::Music,frame as f64/60.0,1.0/60.0,[0.0;2],true);
+            assert_eq!(pet.music_pose(),pose,"其余表情应各自停留 16 秒");
+        }
     }
     #[test]
     fn singing_rotates_expressions_and_starts_with_the_microphone() {
         let mut pet=Pet::default();let mut poses=Vec::new();let mut eyes=Vec::new();
-        for frame in 0..=5880 {
+        for frame in 0..=5100 {
             pet.step(PetState::Music,frame as f64/60.0,1.0/60.0,[0.0;2],true);
-            if [60,1020,1980,2940,3900,4860,5820].contains(&frame) {
+            // 新节奏：①0~3s 拿话筒 ②3~19 哼 ③19~35 侧身 ④35~51 眯 ⑤51~67 高音 ⑥67~83 微笑 ⑦83~ 拿话筒
+            if [60,300,1260,2220,3180,4140,5040].contains(&frame) {
                 poses.push(pet.music_pose());
                 eyes.push(pet.eyes.map(|eye|(eye.height,eye.curve)));
             }
@@ -74,9 +85,20 @@ mod tests {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MusicPose { Microphone, Hum, SideSing, Squint, HighNote, Smile }
 
-const MUSIC_PERIOD:f32=16.0;
+const MUSIC_PERIOD:f32=16.0;                       // 其余 5 个表情各 16 秒
+const MUSIC_FIRST:f32=3.0;                         // 第一个表情（拿话筒）只 3 秒：眼睛渐变完就换表情
+const MUSIC_CYCLE:f32=MUSIC_FIRST+5.0*MUSIC_PERIOD; // 3+80=83 秒一轮
+const MUSIC_POSES:[MusicPose;6]=[MusicPose::Microphone,MusicPose::Hum,MusicPose::SideSing,MusicPose::Squint,MusicPose::HighNote,MusicPose::Smile];
+/// 返回 (当前是第几个表情 0..5, 该表情已持续的秒数)。
+fn music_slot(age:f32)->(usize,f32) {
+    let t=age%MUSIC_CYCLE;
+    if t<MUSIC_FIRST { return (0,t); }
+    let k=(t-MUSIC_FIRST)/MUSIC_PERIOD;
+    let idx=1+(k as usize).min(4);
+    (idx,(t-MUSIC_FIRST)-k.floor()*MUSIC_PERIOD)
+}
 fn music_pose_at(age:f32)->MusicPose {
-    match (age/MUSIC_PERIOD) as usize%6 {0=>MusicPose::Microphone,1=>MusicPose::Hum,2=>MusicPose::SideSing,3=>MusicPose::Squint,4=>MusicPose::HighNote,_=>MusicPose::Smile}
+    MUSIC_POSES[music_slot(age).0]
 }
 
 fn microphone_pose(age:f32)->([f32;2],f32) {
@@ -231,11 +253,11 @@ impl Pet {
                 let sway=(age*1.4).sin();
                 look=[0.0,0.0];y=-0.5+sway*0.25;
                 match self.music_pose() {
-                    // 拿话筒唱（第一个表情）：眼睛从缩略态全睁(4.4)在 3 秒内渐变到微微睁(2.5)，
-                    // 3 秒后到本段结束(16 秒)都保持微微睁，不再慢慢变化。
+                    // 拿话筒唱（第一个表情）：整个表情只有 3 秒，眼睛从缩略态全睁(4.4)
+                    // 在这 3 秒内渐变到微微睁(2.5)，变完立刻切到其余表情，没有停留段。
                     // 侧身唱：更眯的微微睁(2.0)；其余 pose 闭眼。
                     MusicPose::Microphone=>{
-                        let prog=((age%MUSIC_PERIOD)/3.0).clamp(0.0,1.0);
+                        let prog=((age%MUSIC_CYCLE)/MUSIC_FIRST).clamp(0.0,1.0);
                         let h=4.4+(2.5-4.4)*prog;
                         eyes=[Eye::open(h);2];
                     },
@@ -313,11 +335,14 @@ impl Pet {
                     }
                     microphone_radish(c, cx, self.y + self.gaze[1], self.age);
                 } else {
-                    let alpha=smoothstep(0.0,1.0,self.age%MUSIC_PERIOD);
-                    if self.age>=MUSIC_PERIOD && alpha<1.0 {
-                        self.draw_music(&c.faded(1.0-alpha),cx,music_pose_at(self.age-MUSIC_PERIOD),ink);
+                    // 交叉淡入按「当前表情已持续时间」计算，跟随新节奏（第一个 3 秒、其余 16 秒）。
+                    let (slot,elapsed)=music_slot(self.age);
+                    let alpha=smoothstep(0.0,1.0,elapsed);
+                    if self.age>=MUSIC_FIRST && alpha<1.0 {
+                        let prev=if slot==0 {5}else{slot-1};
+                        self.draw_music(&c.faded(1.0-alpha),cx,MUSIC_POSES[prev],ink);
                     }
-                    self.draw_music(&c.faded(alpha),cx,self.music_pose(),ink);
+                    self.draw_music(&c.faded(alpha),cx,MUSIC_POSES[slot],ink);
                 }
             },
             PetState::Worried => {

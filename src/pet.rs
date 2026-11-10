@@ -38,19 +38,23 @@ mod tests {
         }
         let pose=pet.music_pose();
         assert_ne!(pose,MusicPose::Microphone,"3 秒后应接着变其余表情");
-        // 其余表情各自稳定停留 15 秒。
-        for frame in 192..1092 {
+        // 其余表情各自只停 3 秒，随后立刻切到下一个（快节奏轮转，突出动态效果）。
+        for frame in 192..350 {
             pet.step(PetState::Music,frame as f64/60.0,1.0/60.0,[0.0;2],true);
-            assert_eq!(pet.music_pose(),pose,"其余表情应各自停留 16 秒");
+            assert_eq!(pet.music_pose(),pose,"其余表情应各自停留 3 秒");
         }
+        for frame in 350..380 {
+            pet.step(PetState::Music,frame as f64/60.0,1.0/60.0,[0.0;2],true);
+        }
+        assert_ne!(pet.music_pose(),pose,"每个表情 3 秒后应立刻轮换到下一个");
     }
     #[test]
     fn singing_rotates_expressions_and_starts_with_the_microphone() {
         let mut pet=Pet::default();let mut poses=Vec::new();let mut eyes=Vec::new();
-        for frame in 0..=5100 {
+        for frame in 0..=1200 {
             pet.step(PetState::Music,frame as f64/60.0,1.0/60.0,[0.0;2],true);
-            // 新节奏：①0~3s 拿话筒 ②3~19 哼 ③19~35 侧身 ④35~51 眯 ⑤51~67 高音 ⑥67~83 微笑 ⑦83~ 拿话筒
-            if [60,300,1260,2220,3180,4140,5040].contains(&frame) {
+            // 新节奏：①0~3s 拿话筒 ②3~6 哼 ③6~9 侧身 ④9~12 眯 ⑤12~15 高音 ⑥15~18 微笑 ⑦18~ 拿话筒
+            if [90,270,450,630,810,990,1170].contains(&frame) {
                 poses.push(pet.music_pose());
                 eyes.push(pet.eyes.map(|eye|(eye.height,eye.curve)));
             }
@@ -85,9 +89,10 @@ mod tests {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MusicPose { Microphone, Hum, SideSing, Squint, HighNote, Smile }
 
-const MUSIC_PERIOD:f32=16.0;                       // 其余 5 个表情各 16 秒
-const MUSIC_FIRST:f32=3.0;                         // 第一个表情（拿话筒）只 3 秒：眼睛渐变完就换表情
-const MUSIC_CYCLE:f32=MUSIC_FIRST+5.0*MUSIC_PERIOD; // 3+80=83 秒一轮
+const MUSIC_PERIOD:f32=3.0;                        // 其余 5 个表情各 3 秒（快节奏轮转，突出动态效果）
+const MUSIC_FIRST:f32=3.0;                         // 第一个表情（拿话筒）3 秒：眼睛渐变完就换表情
+const MUSIC_CYCLE:f32=MUSIC_FIRST+5.0*MUSIC_PERIOD; // 3+15=18 秒一轮
+const MUSIC_FADE:f32=0.25;                         // 表情切换交叉淡入时长（短，避免 3 秒的表情被淡化糊掉）
 const MUSIC_POSES:[MusicPose;6]=[MusicPose::Microphone,MusicPose::Hum,MusicPose::SideSing,MusicPose::Squint,MusicPose::HighNote,MusicPose::Smile];
 /// 返回 (当前是第几个表情 0..5, 该表情已持续的秒数)。
 fn music_slot(age:f32)->(usize,f32) {
@@ -335,9 +340,9 @@ impl Pet {
                     }
                     microphone_radish(c, cx, self.y + self.gaze[1], self.age);
                 } else {
-                    // 交叉淡入按「当前表情已持续时间」计算，跟随新节奏（第一个 3 秒、其余 16 秒）。
+                    // 交叉淡入按「当前表情已持续时间」计算，跟随新节奏（第一个 3 秒、其余各 3 秒）。
                     let (slot,elapsed)=music_slot(self.age);
-                    let alpha=smoothstep(0.0,1.0,elapsed);
+                    let alpha=smoothstep(0.0,MUSIC_FADE,elapsed);
                     if self.age>=MUSIC_FIRST && alpha<1.0 {
                         let prev=if slot==0 {5}else{slot-1};
                         self.draw_music(&c.faded(1.0-alpha),cx,MUSIC_POSES[prev],ink);

@@ -1936,10 +1936,13 @@ fn singing_microphone_moves_relative_to_the_face_and_disappears_on_pause(){
     for _ in 0..120 {
         h.frame(vec![]);
         let head=head(&h.shapes).expect("演唱应显示球头麦克风");
+        // 唱歌第一个表情现在是「睁开的大眼」（描边 3.6），其余仍是闭眼弧线（2.8），
+        // 过渡帧线宽在两者之间；不能只认 2.8，否则睁眼帧会误判成「眼睛不见了」。
         let eyes:Vec<_>=h.shapes.iter().filter_map(|s|match &s.shape {
-            egui::Shape::Path(p) if p.points.len()==13 && (p.stroke.width-2.8).abs()<0.01=>Some(p.points.iter().map(|p|p.y).sum::<f32>()/13.0),_=>None,
+            egui::Shape::Path(p) if p.points.len()==13 && (2.79..=3.61).contains(&p.stroke.width)=>Some(p.points.iter().map(|p|p.y).sum::<f32>()/13.0),_=>None,
         }).collect();
-        assert_eq!(eyes.len(),2);offsets.push(head.y-(eyes[0]+eyes[1])/2.0);
+        assert!(eyes.len()>=2,"演唱应显示两只眼睛");
+        offsets.push(head.y-eyes.iter().sum::<f32>()/eyes.len() as f32);
     }
     if crate::bar_layout::animations_enabled(){
         let range=offsets.iter().copied().fold(f32::NEG_INFINITY,f32::max)-offsets.iter().copied().fold(f32::INFINITY,f32::min);

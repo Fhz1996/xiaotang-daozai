@@ -109,8 +109,12 @@ mod tests {
         assert_eq!(b.cap_r,[0.0,0.0],"小圆嘴没有球头");
         let mid=lerp_mouth(a,b,0.5);
         assert!((mid.cap_r[0]-0.525).abs()<1e-5,"球头半径连续收拢到一半");
-        assert_eq!(lerp_mouth(a,b,0.0).edge,a.edge);
-        assert_eq!(lerp_mouth(a,b,1.0).edge,b.edge);
+        // f32 的 a+(b-a)*t 在端点会有末位误差（还可能带上 -0.0），用容差比较形状而不是精确相等。
+        let near=|u:[(f32,f32);42],v:[(f32,f32);42]| {
+            u.iter().zip(v.iter()).all(|((ax,ay),(bx,by))|(ax-bx).abs()<1e-4&&(ay-by).abs()<1e-4)
+        };
+        assert!(near(lerp_mouth(a,b,0.0).edge,a.edge),"起点应回到波浪嘴");
+        assert!(near(lerp_mouth(a,b,1.0).edge,b.edge),"终点应变成小圆嘴");
     }
 }
 

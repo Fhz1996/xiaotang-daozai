@@ -263,7 +263,9 @@ impl Pet {
                 self.blink = (blink * std::f32::consts::PI).sin();
             }
         }
-        let eye_dt=if state==PetState::Music {dt*0.2}else{dt};
+        // 只有唱歌循环的第一个表情（拿话筒）允许慢速跟随，用来呈现「从缩略态大眼慢慢眯起来」；
+        // 其余 5 个表情切换要干脆到位，不拖着从缩略态/上一表情慢慢变过来。
+        let eye_dt=if state==PetState::Music && matches!(self.music_pose(),MusicPose::Microphone) {dt*0.2}else{dt};
         for (eye, goal) in self.eyes.iter_mut().zip(eyes) { eye.follow(goal, eye_dt); }
         for (axis, goal) in self.gaze.iter_mut().zip(look) { *axis = approach(*axis, goal, 10.0, dt); }
         self.y = approach(self.y, y, 14.0, dt);
@@ -362,10 +364,11 @@ impl Pet {
     ///    鼠标左右平移导致眼距忽宽忽窄、与嘴巴错位产生「侧面感」。
     /// 2. 眨眼只把高度往中间压缩（宽度不变，最后合成一条闭眼弧线），而不是整体等比缩放。
     fn draw_cute_eyes(&self, c: &Card, cx: f32, ink: Color32, pupil: Color32, eye_ratio: f32) {
-        // 开心：睁圆大眼、瞳孔居中；唱歌态：微微睁的横向压扁蛋形（睁眼 pose）+ 弧线（闭眼 pose），
-        // 宽度统一 2.875、不放大；清醒/担忧等保持缩略态大眼（对眼下移）。
+        // 开心：睁圆大眼、瞳孔居中；清醒/担忧等保持缩略态大眼（对眼下移）。
+        // 唱歌态：仅第一个表情（拿话筒）从缩略态大眼开始渐变；其余 5 个表情是定稿的
+        // 微微睁横向压扁蛋形（宽度固定 2.875、不放大）或闭眼弧线，不参与「从缩略态开始」。
         let wide = matches!(self.state, PetState::Happy);
-        // 唱歌态整体独立绘制（宽度固定 2.875），睁眼/闭眼靠 eye.height 平滑过渡。
+        // 唱歌态整体独立绘制，睁眼/闭眼靠 eye.height 平滑过渡。
         let in_music = self.state == PetState::Music;
         // 缩略态大眼在基准上放大 50%（1.5 倍）；唱歌态「微微睁眼」不放大（保持 1 倍基准，见 radish-eye150 定稿）。
         let eye_scale = 1.5;
@@ -373,16 +376,23 @@ impl Pet {
             // 眼白固定位置：只随宠物整体 y 浮动，不随 gaze 平移。
             let x = cx + if i == 0 { -4.7 } else { 4.7 };
             let y = 14.5 + self.y + eye.y;
-            // 唱歌态：眼睛尺寸随 eye.height 平滑过渡，让「拿话筒唱」从缩略态大眼自然渐变到微微睁，
-            // 避免进入唱歌瞬间宽度跳变。eye.height 4.4=缩略态大眼、2.5=微微睁、更小=更眯。
-            if in_music {
-                let open = (1.0 - self.blink).clamp(0.0, 1.0);
-                let full_h = 4.4 * 0.72 * eye_scale;      // 缩略态满睁高度（4.752）
-                let full_w = full_h * eye_ratio;          // 缩略态满睁宽度（3.469）
+        // 唱歌态：只有第一个表情（拿话筒）「从缩略态眼睛开始」——尺寸随 eye.height 从
+        // 缩略态(4.4 → 3.469×4.752 竖椭圆)平滑插值到微微睁(2.5 → 2.875×2.5 横扁蛋形)。
+        // 其余 5 个表情不走这套插值，直接用定稿尺寸（宽度固定 2.875），不参与缩略态渐变。
+        if in_music {
+            let open = (1.0 - self.blink).clamp(0.0, 1.0);
+            let first = matches!(self.music_pose(), MusicPose::Microphone);
+            let (rw, rh_full) = if first {
+                let full_h = 4.4 * 0.72 * eye_scale;  // 缩略态满睁高度（4.752）
+                let full_w = full_h * eye_ratio;      // 缩略态满睁宽度（3.469）
                 let t = ((eye.height - 2.5) / 1.9).clamp(0.0, 1.0);
                 let rw = 2.875 + t * (full_w - 2.875);
                 let rh_full = if eye.height >= 2.5 { 2.5 + t * (full_h - 2.5) } else { eye.height };
-                let rh = rh_full * open;
+                (rw, rh_full)
+            } else {
+                (2.875_f32, eye.height)               // 定稿固定尺寸：不从缩略态开始
+            };
+            let rh = rh_full * open;
                 if rh < 0.14 {
                     // 眨眼（睁眼 pose 短暂闭合）向下弯；表情闭眼（闭眼 pose）按 curve 弯向。
                     let curve = if eye.height < 0.14 { eye.curve * eye_scale } else { 0.65 * eye_scale };

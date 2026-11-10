@@ -231,10 +231,11 @@ impl Pet {
                 let sway=(age*1.4).sin();
                 look=[0.0,0.0];y=-0.5+sway*0.25;
                 match self.music_pose() {
-                    // 拿话筒唱：眼睛从缩略态全睁(4.4)随时间渐变到微微睁(2.5)，唱得越久越陶醉。
+                    // 拿话筒唱（第一个表情）：眼睛从缩略态全睁(4.4)在 3 秒内渐变到微微睁(2.5)，
+                    // 3 秒后到本段结束(16 秒)都保持微微睁，不再慢慢变化。
                     // 侧身唱：更眯的微微睁(2.0)；其余 pose 闭眼。
                     MusicPose::Microphone=>{
-                        let prog=((age%MUSIC_PERIOD)/MUSIC_PERIOD).clamp(0.0,1.0);
+                        let prog=((age%MUSIC_PERIOD)/3.0).clamp(0.0,1.0);
                         let h=4.4+(2.5-4.4)*prog;
                         eyes=[Eye::open(h);2];
                     },
@@ -263,10 +264,9 @@ impl Pet {
                 self.blink = (blink * std::f32::consts::PI).sin();
             }
         }
-        // 只有唱歌循环的第一个表情（拿话筒）允许慢速跟随，用来呈现「从缩略态大眼慢慢眯起来」；
-        // 其余 5 个表情切换要干脆到位，不拖着从缩略态/上一表情慢慢变过来。
-        let eye_dt=if state==PetState::Music && matches!(self.music_pose(),MusicPose::Microphone) {dt*0.2}else{dt};
-        for (eye, goal) in self.eyes.iter_mut().zip(eyes) { eye.follow(goal, eye_dt); }
+        // 眼睛跟随统一用正常速度：拿话筒的「缩略态→微微睁」柔和感已由 3 秒渐变本身提供，
+        // 不再叠加 0.2 倍慢速跟随（滞后会把 3 秒拖成近 4 秒，达不到 3 秒到位）。
+        for (eye, goal) in self.eyes.iter_mut().zip(eyes) { eye.follow(goal, dt); }
         for (axis, goal) in self.gaze.iter_mut().zip(look) { *axis = approach(*axis, goal, 10.0, dt); }
         self.y = approach(self.y, y, 14.0, dt);
     }

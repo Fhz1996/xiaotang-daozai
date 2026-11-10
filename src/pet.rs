@@ -295,11 +295,14 @@ impl Pet {
             PetState::Satisfied => crate::paint::droplet(c,cx+18.0,12.0,5.0,theme::CYAN),
             PetState::Music => {
                 if cute_mouth {
-                    // 萝卜式唱歌：睁眼 pose（拿话筒/侧身唱）脸回到缩略态——大眼 + 波浪嘴；
-                    // 眯眼 pose（哼/眯/高音/微笑）闭眼 + 圆形 O 嘴开合。两者都手持麦克风。
+                    // 萝卜式唱歌嘴巴：
+                    // - 拿话筒（微微睁）：缩略态波浪嘴（正常唱，脸接近缩略态）。
+                    // - 侧身唱（更眯）：唱歌 O 嘴开合——嘴巴张开、像在投入地唱歌。
+                    // - 闭眼 pose（哼/眯/高音/微笑）：简单的一点小嘴（小巧 O 嘴轻微开合）。
                     match self.music_pose() {
-                        MusicPose::Microphone | MusicPose::SideSing => self.draw_wave_mouth(c, cx, ink),
-                        _ => self.draw_sing_mouth(c, cx, ink),
+                        MusicPose::Microphone => self.draw_wave_mouth(c, cx, ink),
+                        MusicPose::SideSing => self.draw_sing_mouth(c, cx, ink),
+                        _ => self.draw_small_mouth(c, cx, ink),
                     }
                     microphone_radish(c, cx, self.y + self.gaze[1], self.age);
                 } else {
@@ -475,11 +478,19 @@ impl Pet {
         ellipse(c, cx, y + 0.6, 2.5, 1.8, tongue);
     }
 
-    /// 唱歌嘴：圆形 O 嘴随节奏开合（发长音时张圆、换气时收小），与开心的大笑嘴区分。
+    /// 唱歌嘴（侧身唱用）：圆形 O 嘴随节奏开合（发长音时张圆、换气时收小），像投入地唱歌。
     fn draw_sing_mouth(&self, c: &Card, cx: f32, ink: Color32) {
         let y = 23.5 + self.y;
         let open = (self.age * 3.6).sin() * 0.5 + 0.5;   // 0..1，随唱歌节奏开合
         ellipse(c, cx, y, 2.1 + open * 0.5, 1.6 + open * 1.3, ink);
+    }
+
+    /// 闭眼（哼/眯/高音/微笑）时的简单小嘴：小巧的 O 嘴随节奏轻微开合，
+    /// 比唱歌张嘴小得多，闭眼时嘴巴"简单一点"、不抢戏。
+    fn draw_small_mouth(&self, c: &Card, cx: f32, ink: Color32) {
+        let y = 23.5 + self.y;
+        let open = (self.age * 3.6).sin() * 0.5 + 0.5;   // 0..1，随唱歌节奏轻微开合
+        ellipse(c, cx, y, 1.1 + open * 0.35, 0.7 + open * 0.55, ink);
     }
 
     fn draw_music(&self,c:&Card,cx:f32,pose:MusicPose,ink:Color32){

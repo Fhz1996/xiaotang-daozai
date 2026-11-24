@@ -81,6 +81,7 @@ pub struct Viewport {
     deferred_commands: Vec<egui::viewport::ViewportCommand>,
     info: ViewportInfo,
     actions_requested: HashSet<ActionRequested>,
+    capture_deadline: Option<Instant>,
 
     /// `None` for sync viewports.
     viewport_ui_cb: Option<Arc<DeferredViewportUiCallback>>,
@@ -288,6 +289,7 @@ impl<'app> WgpuWinitApp<'app> {
                 deferred_commands: vec![],
                 info,
                 actions_requested: Default::default(),
+                capture_deadline: None,
                 viewport_ui_cb: None,
                 window: Some(window),
                 egui_winit: Some(egui_winit),
@@ -578,6 +580,17 @@ impl WgpuWinitRunning<'_> {
                 return Ok(EventResult::Wait);
             };
 
+            integration.frame.interactive_frame_start = viewport.capture_deadline.take().map(|deadline| {
+                // 在取输入前用完应用已有的帧间隔，避免提早取走尚未就绪的一批截图。
+                if let Some(delay) = deadline.checked_duration_since(Instant::now()) {
+                    std::thread::sleep(delay);
+                }
+                let start = Instant::now();
+                if let Some(state) = &integration.frame.wgpu_render_state {
+                    let _ = state.device.poll(wgpu::Maintain::Poll);
+                }
+                start
+            });
             let Viewport {
                 viewport_ui_cb,
                 window,
@@ -642,7 +655,7 @@ impl WgpuWinitRunning<'_> {
             textures_delta,
             shapes,
             pixels_per_point,
-            viewport_output,
+            mut viewport_output,
         } = full_output;
 
         remove_viewports_not_in(viewports, painter, viewport_from_window, &viewport_output);
@@ -678,9 +691,22 @@ impl WgpuWinitRunning<'_> {
                 true
             }
         });
+        if let Some(output) = viewport_output.get_mut(&viewport_id) {
+            // 常规窗口命令在绘制后处理；翻页截图要在本帧提交，并且只提交一次。
+            output.commands.retain(|cmd| {
+                if let egui::ViewportCommand::Screenshot(data) = cmd {
+                    if let Some(capture) = data.data.as_ref().and_then(|tag| tag.downcast_ref::<crate::InteractiveCapture>()) {
+                        screenshot_commands.push(data.clone());
+                        viewport.capture_deadline = Some(capture.0);
+                        return false;
+                    }
+                }
+                true
+            });
+        }
         let vsync_secs = painter.paint_and_update_textures(
             viewport_id,
-            pixels_per_point * if viewport_id==ViewportId::ROOT {crate::root_frame_paint_scale()} else {1.0},
+            pixels_per_point,
             app.clear_color(&egui_ctx.style().visuals),
             &clipped_primitives,
             &textures_delta,
@@ -1085,7 +1111,7 @@ fn handle_viewport_output(
 
             viewport.deferred_commands.append(&mut commands);
 
-            egui_winit::process_viewport_commands(
+            super::winit_integration::process_viewport_commands(
                 egui_ctx,
                 &mut viewport.info,
                 std::mem::take(&mut viewport.deferred_commands),
@@ -1139,6 +1165,7 @@ fn initialize_or_update_viewport<'a>(
                 deferred_commands: vec![],
                 info: Default::default(),
                 actions_requested: HashSet::new(),
+                capture_deadline: None,
                 viewport_ui_cb,
                 window: None,
                 egui_winit: None,

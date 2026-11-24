@@ -406,6 +406,7 @@ pub(crate) struct Pet {
     pub last_idle: f64,
     pub hovered: bool,
     pub worried: bool,
+    pub expressions: crate::pet_expressions::Expressions,
     age: f32,
     eyes: [Eye; 2],
     gaze: [f32; 2],
@@ -417,7 +418,7 @@ pub(crate) struct Pet {
 impl Default for Pet {
     fn default() -> Self {
         Self { state: PetState::Awake, reaction: None, waking_until: 0.0, last_idle: 0.0,
-            hovered: false, worried: false, age: 0.0, eyes: [Eye::open(4.4); 2], gaze: [0.0; 2], y: 0.0, blink: 0.0 }
+            hovered: false, worried: false, expressions: Default::default(), age: 0.0, eyes: [Eye::open(4.4); 2], gaze: [0.0; 2], y: 0.0, blink: 0.0 }
     }
 }
 
